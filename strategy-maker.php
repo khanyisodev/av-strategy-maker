@@ -8,6 +8,7 @@ Version: 1.0.0
 function strategy_maker_enqueue() {
     wp_enqueue_script('tailwind', 'https://cdn.tailwindcss.com', [], null, false);
     wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js', [], null, true);
+    wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css', [], '6.5.1');
     wp_enqueue_style('strategy-maker', plugins_url('strategy-maker.css', __FILE__), [], '1.0.0');
     wp_enqueue_script('strategy-maker', plugins_url('strategy-maker.js', __FILE__), ['chartjs'], '1.0.0', true);
 }
@@ -56,11 +57,9 @@ function strategy_maker_shortcode() {
               Reset
             </button>
 
-            <button id="btnSettings" class="ml-auto p-2 text-slate-400 hover:text-slate-200">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="w-6 h-6">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.768.78.93l.806.322c.49.196.696.775.388 1.24l-.528.78a1.125 1.125 0 000 1.272l.528.78c.308.465.102 1.044-.388 1.24l-.806.322c-.396.162-.71.506-.78.93l-.15.894c-.09.542-.56.94-1.11.94h-1.093c-.55 0-1.02-.398-1.11-.94l-.149-.894c-.07-.424-.384-.768-.78-.93l-.806-.322c-.49-.196-.696-.775-.388-1.24l.529-.78a1.125 1.125 0 000-1.272l-.53-.78c-.308-.465-.102-1.044.388-1.24l.807-.322c.396-.162.71-.506.78-.93l.149-.894z" />
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8.25a3.75 3.75 0 100 7.5 3.75 3.75 0 000-7.5z" />
-              </svg>
+            <button id="btnSettings" class="ml-auto p-2 text-slate-400 hover:text-slate-200 text-2xl">
+              <i class="fa-solid fa-gear" aria-hidden="true"></i>
+              <span class="sr-only">Settings</span>
             </button>
           </div>
 

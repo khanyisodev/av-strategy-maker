@@ -230,13 +230,14 @@ function init() {
     let labels = Array.from({ length: maxPointsDefault }, (_, i) => i - maxPointsDefault);
 
     const strategies = [];
+    const STORAGE_KEY = 'strategy-maker-state';
 
     // Multipliers state
     let usedMultipliers = [];
     let prevMult = null;
     let preloadIdx = 0;
 
-    const defaultCashout = parseFloat(cashoutEl.value) || 3.7;
+    let defaultCashout = parseFloat(cashoutEl.value) || 3.7;
 
     const chart = new Chart(ctx, {
       type: 'line',
@@ -291,9 +292,52 @@ function init() {
         bankroll: INITIAL_BANKROLL,
         martiIdx: 0,
         data: Array.from({ length: maxPoints }, () => INITIAL_BANKROLL),
-        color
+        color,
+        collapsed: false
       };
     }
+
+    function saveState() {
+      const state = {
+        speed: speedEl.value,
+        window: windowEl.value,
+        cashout: cashoutEl.value,
+        strategies: strategies.map(({ name, cashout, show, martingale, sequence, conditions, risk, color, collapsed }) => ({
+          name, cashout, show, martingale, sequence, conditions, risk, color, collapsed
+        }))
+      };
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const state = JSON.parse(raw);
+        if (state.speed) speedEl.value = state.speed;
+        if (state.window) windowEl.value = state.window;
+        if (state.cashout) {
+          cashoutEl.value = state.cashout;
+          defaultCashout = parseFloat(state.cashout) || defaultCashout;
+        }
+        if (Array.isArray(state.strategies)) {
+          strategies.splice(0, strategies.length);
+          state.strategies.forEach(saved => {
+            const base = defaultStrategy();
+            Object.assign(base, saved);
+            const maxPoints = parseInt(windowEl.value, 10);
+            base.bankroll = INITIAL_BANKROLL;
+            base.martiIdx = 0;
+            base.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+            strategies.push(base);
+          });
+        }
+      } catch (e) {}
+    }
+
+    loadState();
+    renderStrategies();
+    syncChartDatasets();
 
     function renderStrategies() {
       strategiesWrap.innerHTML = strategies.map((s,i) => {
@@ -319,27 +363,32 @@ function init() {
           </div>`).join('');
         return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${i}">
           <div class="flex justify-between items-center">
-            <span class="text-sm font-medium text-slate-100">Strategy ${i+1}</span>
-            <button type="button" data-action="remove" class="text-rose-400 text-xs">Remove</button>
+            <button type="button" data-action="toggle" class="text-sm font-medium text-slate-100 text-left flex-1">Strategy ${i+1}${s.name?`: ${s.name}`:''}</button>
+            <div class="flex items-center gap-2">
+              <button type="button" data-action="duplicate" class="text-indigo-400 text-xs">Duplicate</button>
+              <button type="button" data-action="remove" class="text-rose-400 text-xs">Remove</button>
+            </div>
           </div>
-          <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="show" ${s.show?'checked':''}/> Show in chart</label>
-          <input type="text" data-field="name" placeholder="Name" value="${s.name}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
-          <label class="flex items-center gap-2 text-sm text-slate-200">Cashout <input type="number" step="0.01" min="1.01" data-field="cashout" value="${s.cashout}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
-          <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="martingale" ${s.martingale?'checked':''}/> Martingale</label>
-          <input type="text" data-field="sequence" placeholder="1, 1.88, 2.31" value="${s.sequence.join(', ')}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm ${s.martingale?'':'hidden'}" />
-          <div class="mt-2 text-sm text-slate-200">Conditions</div>
-          <div class="conditions" data-cond-wrap>${condRows}</div>
-          <button type="button" data-action="add-cond" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Condition</button>
-          <div class="mt-2 text-sm text-slate-200"><label class="flex items-center gap-2"><input type="checkbox" data-field="risk" ${s.risk.enabled?'checked':''}/>Enable Risk Management</label></div>
-          <div class="risk-fields ${s.risk.enabled?'':'hidden'} space-y-2 mt-1">
-            <label class="flex items-center gap-2 text-sm text-slate-200">Rounds before pause<input type="number" data-field="riskRounds" value="${s.risk.rounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">Resume after<input type="number" step="0.01" data-field="riskResume" value="${s.risk.resumeAbove}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/>x above cashout</label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">Restart martingale<select data-field="riskRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="start" ${s.risk.restart==='start'?'selected':''}>From start</option><option value="continue" ${s.risk.restart==='continue'?'selected':''}>Where left off</option></select></label>
-            <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="secondBetEnabled" ${s.risk.second.enabled?'checked':''}/>Second bet</label>
-            <div class="second-bet-fields ${s.risk.second.enabled?'':'hidden'} space-y-2">
-              <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount<input type="number" data-field="secondBetAmount" value="${s.risk.second.amount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
-              <label class="flex items-center gap-2 text-sm text-slate-200">When bet1 wins<select data-field="secondRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="restart" ${s.risk.second.restart==='restart'?'selected':''}>Restart</option><option value="lock" ${s.risk.second.restart==='lock'?'selected':''}>Lock</option></select></label>
-              <label class="flex items-center gap-2 text-sm text-slate-200">Lock rounds<input type="number" data-field="secondLockRounds" value="${s.risk.second.lockRounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+          <div class="mt-2 space-y-2 ${s.collapsed?'hidden':''}" data-fields>
+            <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="show" ${s.show?'checked':''}/> Show in chart</label>
+            <input type="text" data-field="name" placeholder="Name" value="${s.name}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
+            <label class="flex items-center gap-2 text-sm text-slate-200">Cashout <input type="number" step="0.01" min="1.01" data-field="cashout" value="${s.cashout}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+            <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="martingale" ${s.martingale?'checked':''}/> Martingale</label>
+            <input type="text" data-field="sequence" placeholder="1, 1.88, 2.31" value="${s.sequence.join(', ')}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm ${s.martingale?'':'hidden'}" />
+            <div class="mt-2 text-sm text-slate-200">Conditions</div>
+            <div class="conditions" data-cond-wrap>${condRows}</div>
+            <button type="button" data-action="add-cond" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Condition</button>
+            <div class="mt-2 text-sm text-slate-200"><label class="flex items-center gap-2"><input type="checkbox" data-field="risk" ${s.risk.enabled?'checked':''}/>Enable Risk Management</label></div>
+            <div class="risk-fields ${s.risk.enabled?'':'hidden'} space-y-2 mt-1">
+              <label class="flex items-center gap-2 text-sm text-slate-200">Rounds before pause<input type="number" data-field="riskRounds" value="${s.risk.rounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">Resume after<input type="number" step="0.01" data-field="riskResume" value="${s.risk.resumeAbove}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/>x above cashout</label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">Restart martingale<select data-field="riskRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="start" ${s.risk.restart==='start'?'selected':''}>From start</option><option value="continue" ${s.risk.restart==='continue'?'selected':''}>Where left off</option></select></label>
+              <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="secondBetEnabled" ${s.risk.second.enabled?'checked':''}/>Second bet</label>
+              <div class="second-bet-fields ${s.risk.second.enabled?'':'hidden'} space-y-2">
+                <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount<input type="number" data-field="secondBetAmount" value="${s.risk.second.amount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+                <label class="flex items-center gap-2 text-sm text-slate-200">When bet1 wins<select data-field="secondRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="restart" ${s.risk.second.restart==='restart'?'selected':''}>Restart</option><option value="lock" ${s.risk.second.restart==='lock'?'selected':''}>Lock</option></select></label>
+                <label class="flex items-center gap-2 text-sm text-slate-200">Lock rounds<input type="number" data-field="secondLockRounds" value="${s.risk.second.lockRounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+              </div>
             </div>
           </div>
         </div>`;
@@ -370,6 +419,7 @@ function init() {
         case 'secondRestart': s.risk.second.restart = e.target.value; break;
         case 'secondLockRounds': s.risk.second.lockRounds = parseInt(e.target.value,10) || 0; break;
       }
+      saveState();
     });
 
     strategiesWrap.addEventListener('click', (e) => {
@@ -378,15 +428,38 @@ function init() {
       const s = strategies[idx];
       const action = e.target.dataset.action;
       if (action === 'remove') { strategies.splice(idx,1); renderStrategies(); syncChartDatasets(); }
+      if (action === 'duplicate') {
+        const clone = JSON.parse(JSON.stringify(s));
+        clone.color = COLOR_PALETTE[strategies.length % COLOR_PALETTE.length];
+        const maxPoints = parseInt(windowEl.value, 10);
+        clone.bankroll = INITIAL_BANKROLL;
+        clone.martiIdx = 0;
+        clone.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+        clone.collapsed = false;
+        strategies.push(clone);
+        strategies.forEach((st,j)=>{ st.collapsed = j === strategies.length-1 ? false : true; });
+        renderStrategies();
+        syncChartDatasets();
+      }
+      if (action === 'toggle') {
+        const isOpening = s.collapsed;
+        strategies.forEach((st,j)=>{ st.collapsed = j==idx ? !st.collapsed : (isOpening ? true : st.collapsed); });
+        renderStrategies();
+      }
       if (action === 'add-cond') { s.conditions.push({ logic: 'AND', pos:1, op:'>', value:1.0 }); renderStrategies(); }
       if (action === 'remove-cond') { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions.splice(ci,1); renderStrategies(); }
+      saveState();
     });
 
     if (addStrategyBtn) {
       addStrategyBtn.addEventListener('click', () => {
-        strategies.push(defaultStrategy());
+        strategies.forEach(st => st.collapsed = true);
+        const ns = defaultStrategy();
+        ns.collapsed = false;
+        strategies.push(ns);
         renderStrategies();
         syncChartDatasets();
+        saveState();
       });
     }
 
@@ -486,9 +559,9 @@ function init() {
       btnToggle.textContent = running ? 'Pause' : 'Resume';
       running ? startLoop() : stopLoop();
     });
-    speedEl.addEventListener('input', () => { if (running) startLoop(); });
-    windowEl.addEventListener('change', () => { clampWindow(); syncChartDatasets(); });
-    cashoutEl.addEventListener('input', () => {});
+    speedEl.addEventListener('input', () => { if (running) startLoop(); saveState(); });
+    windowEl.addEventListener('change', () => { clampWindow(); syncChartDatasets(); saveState(); });
+    cashoutEl.addEventListener('input', () => { defaultCashout = parseFloat(cashoutEl.value) || defaultCashout; saveState(); });
 
     btnReset.addEventListener('click', () => {
       tick = 0;
@@ -509,6 +582,7 @@ function init() {
 
       if (!running) { running = true; btnToggle.textContent = 'Pause'; }
       startLoop();
+      saveState();
     });
 
     if (btnSettings && settingsModal) {

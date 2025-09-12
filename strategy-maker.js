@@ -208,7 +208,7 @@ function init() {
       list.slice(-25).reverse().forEach(m => {
         const primary = colorForMultiplier(m);
         const pill = document.createElement('span');
-        pill.className = 'px-2.5 py-1 rounded-full border text-xs mono';
+        pill.className = 'px-2.5 py-1 rounded-full border text-xs mono w-fit';
         pill.style.color = primary;
         pill.style.borderColor = primary;
         pill.style.backgroundColor = hexToRgba(primary, 0.15);

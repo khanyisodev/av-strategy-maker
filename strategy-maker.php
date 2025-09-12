@@ -25,7 +25,7 @@ function strategy_maker_shortcode() {
     <div id="strategy-maker-root">
       <main class="max-w-[1500px] mx-auto px-4 py-10">
           <header class="mb-6">
-            <h1 class="text-3xl font-semibold tracking-tight">Bankroll Simulation (Dark • Preloaded)</h1>
+            <h1 class="text-3xl font-semibold tracking-tight text-left">Bankroll Simulation (Dark • Preloaded)</h1>
             <p class="text-slate-400 mt-1">Build and simulate custom strategies with dual bets, martingale sequences and risk controls.</p>
           </header>
 
@@ -61,8 +61,8 @@ function strategy_maker_shortcode() {
           </div>
 
           <div class="mb-4">
-            <h2 class="text-sm font-medium text-slate-300 mb-2">Last 25 multipliers</h2>
-            <div id="multis" class="flex flex-col gap-1 justify-start"></div>
+            <h2 class="text-sm font-medium text-slate-300 mb-2 text-left">Last 25 multipliers</h2>
+            <div id="multis" class="flex flex-wrap gap-1 justify-start w-fit"></div>
             <div id="status" class="mt-2 text-xs text-slate-400"></div>
           </div>
 

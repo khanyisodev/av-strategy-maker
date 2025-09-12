@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
+function init() {
   const siteBody = document.getElementById('lqd-site-content') || document.body;
   siteBody.classList.add('min-h-screen', 'bg-slate-950', 'text-slate-100', 'antialiased');
 
@@ -529,9 +529,16 @@ document.addEventListener('DOMContentLoaded', () => {
       startLoop();
     });
 
-    btnSettings.addEventListener('click', () => settingsModal.classList.remove('hidden'));
-    settingsClose.addEventListener('click', () => settingsModal.classList.add('hidden'));
-    settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.classList.add('hidden'); });
+    if (btnSettings && settingsModal && settingsClose) {
+      btnSettings.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+      settingsClose.addEventListener('click', () => settingsModal.classList.add('hidden'));
+      settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.classList.add('hidden'); });
+    }
 
     window.addEventListener('beforeunload', stopLoop);
-  });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

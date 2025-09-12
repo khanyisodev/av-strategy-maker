@@ -1,8 +1,13 @@
-    body,
-    #lqd-site-content,
-    #strategy-maker {
-        background-color: #0f172a;
-    }
+body,
+#lqd-site-content,
+#strategy-maker {
+    background-color: #fff;
+}
+body.dark,
+#lqd-site-content.dark,
+#strategy-maker.dark {
+    background-color: #0f172a;
+}
 
     .card { transition: transform .2s ease, box-shadow .2s ease; }
     .card:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,.25); }

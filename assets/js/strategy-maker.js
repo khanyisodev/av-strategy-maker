@@ -350,12 +350,34 @@
     const speedEl     = document.getElementById('speed');
     const windowEl    = document.getElementById('window');
     const smoothEl    = document.getElementById('smooth');
-    const seriesMEl   = document.getElementById('seriesM');
-    const series3El   = document.getElementById('series3');
-    const seriesGuardEl = document.getElementById('seriesGuard');
+    const themeToggle = document.getElementById('themeToggle');
+    const rootEl      = document.getElementById('strategy-maker');
+    const siteContent = document.getElementById('lqd-site-content');
+    const bodyEl      = document.body;
 
-    let running = true;
+    let running = false;
     let interval = null;
+    let darkMode = true;
+
+    function applyTheme(on) {
+      if (on) {
+        rootEl.classList.add('dark');
+        bodyEl.classList.add('dark');
+        if (siteContent) siteContent.classList.add('dark');
+        themeToggle.textContent = 'Light Mode';
+      } else {
+        rootEl.classList.remove('dark');
+        bodyEl.classList.remove('dark');
+        if (siteContent) siteContent.classList.remove('dark');
+        themeToggle.textContent = 'Dark Mode';
+      }
+    }
+    applyTheme(darkMode);
+
+    themeToggle.addEventListener('click', () => {
+      darkMode = !darkMode;
+      applyTheme(darkMode);
+    });
 
     function clampWindow() {
       const maxPoints = parseInt(windowEl.value, 10);
@@ -475,31 +497,24 @@
 
     // Init
     renderLastMultipliers([]);
-    startLoop();
 
     // Controls
     btnToggle.addEventListener('click', () => {
-      running = !running;
-      btnToggle.textContent = running ? 'Pause' : 'Resume';
-      running ? startLoop() : stopLoop();
+      if (!running) {
+        running = true;
+        btnToggle.textContent = 'Pause';
+        startLoop();
+      } else {
+        running = false;
+        btnToggle.textContent = 'Resume';
+        stopLoop();
+      }
     });
     speedEl.addEventListener('input', () => { if (running) startLoop(); });
     windowEl.addEventListener('change', () => { clampWindow(); chart.update(); });
     smoothEl.addEventListener('change', () => {
       const t = smoothEl.checked ? 0.35 : 0;
       chart.data.datasets.forEach(ds => ds.tension = t);
-      chart.update();
-    });
-    seriesMEl.addEventListener('change', () => {
-      chart.data.datasets[1].hidden = !seriesMEl.checked;
-      chart.update();
-    });
-    series3El.addEventListener('change', () => {
-      chart.data.datasets[2].hidden = !series3El.checked;
-      chart.update();
-    });
-    seriesGuardEl.addEventListener('change', () => {
-      chart.data.datasets[3].hidden = !seriesGuardEl.checked;
       chart.update();
     });
     cashoutEl.addEventListener('input', () => {

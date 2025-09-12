@@ -479,6 +479,7 @@ function init() {
 
     function evaluateConditions(conds, history) {
       if (conds.length === 0) return false;
+
       const evalCond = c => {
         const val = history[history.length - c.pos];
         if (val === undefined) return false;
@@ -491,13 +492,21 @@ function init() {
           default: return false;
         }
       };
-      let result = evalCond(conds[0]);
-      for (let i = 1; i < conds.length; i++) {
-        const c = conds[i];
-        const r = evalCond(c);
-        result = c.logic === 'OR' ? (result || r) : (result && r);
-      }
-      return result;
+
+      // Split conditions into groups separated by OR. Each group uses AND logic.
+      const groups = [];
+      let current = [];
+      conds.forEach((c, i) => {
+        if (i > 0 && c.logic === 'OR') {
+          groups.push(current);
+          current = [c];
+        } else {
+          current.push(c);
+        }
+      });
+      groups.push(current);
+
+      return groups.some(group => group.every(cond => evalCond(cond)));
     }
 
     function clampWindow() {

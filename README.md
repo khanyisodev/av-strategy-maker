@@ -1,2 +1,6 @@
-# av-strategy-maker
-This aInteractive bankroll simulation WordPress plugin with dark UI. Visualizes betting strategies (fixed, martingale, dynamic, guarded martingale) using preloaded multipliers. Features real-time Chart.js graphs, controls for speed, cashout, reset, and toggles. Embed via shortcode for posts or pages.
+# Strategy Maker
+
+WordPress plugin displaying a bankroll simulation with a dark UI. It visualizes several betting strategies (fixed, martingale,
+dynamic, guarded martingale) using preloaded multipliers. The interface includes controls for speed, window size, cashout and a
+reset button, while dataset visibility can be toggled via the chart legend. Embed the UI in posts or pages using the
+`[strategy_maker]` shortcode.

@@ -8,7 +8,7 @@ Version: 1.0.0
 function strategy_maker_enqueue() {
     wp_enqueue_script('tailwind', 'https://cdn.tailwindcss.com', [], null, false);
     wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js', [], null, true);
-    wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css', [], '6.5.2');
+    wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css', [], '5.15.4');
     wp_enqueue_style('strategy-maker', plugins_url('strategy-maker.css', __FILE__), [], '1.0.0');
     wp_enqueue_script('strategy-maker', plugins_url('strategy-maker.js', __FILE__), ['chartjs'], '1.0.0', true);
 }
@@ -58,7 +58,7 @@ function strategy_maker_shortcode() {
             </button>
 
             <button id="btnSettings" type="button" class="ml-auto p-2 text-slate-400 hover:text-slate-200">
-              <i class="fa-solid fa-gear text-xl" aria-hidden="true"></i>
+              <i class="fas fa-cog text-xl" aria-hidden="true"></i>
               <span class="sr-only">Settings</span>
             </button>
           </div>
@@ -93,7 +93,7 @@ function strategy_maker_shortcode() {
           </div>
         </section>
       </main>
-      <div id="settingsModal" aria-hidden="true" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60">
+      <div id="settingsModal" aria-hidden="true" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/60">
         <div class="bg-slate-800 p-6 rounded-xl max-w-sm w-full">
           <h2 class="text-lg font-medium text-slate-100 mb-4">Settings</h2>
           <button id="settingsClose" type="button" class="mt-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm">

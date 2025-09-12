@@ -529,7 +529,7 @@ function init() {
       startLoop();
     });
 
-    if (btnSettings && settingsModal && settingsClose) {
+    if (btnSettings && settingsModal) {
       const openSettings = () => {
         settingsModal.classList.remove('hidden');
         settingsModal.setAttribute('aria-hidden', 'false');
@@ -539,7 +539,7 @@ function init() {
         settingsModal.setAttribute('aria-hidden', 'true');
       };
       btnSettings.addEventListener('click', openSettings);
-      settingsClose.addEventListener('click', closeSettings);
+      if (settingsClose) settingsClose.addEventListener('click', closeSettings);
       settingsModal.addEventListener('click', e => { if (e.target === settingsModal) closeSettings(); });
       document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); });
     }

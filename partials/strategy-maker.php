@@ -1,5 +1,4 @@
-<div id="strategy-maker" class="strategy-maker dark min-h-screen bg-white text-slate-900 antialiased">
-  <button id="modeToggle" class="mb-4 px-4 py-2 rounded-xl bg-gray-200 text-gray-900 dark:bg-slate-800 dark:text-slate-100">Light Mode</button>
+<div id="strategy-maker" class="strategy-maker dark min-h-screen bg-slate-900 text-slate-100 antialiased">
   <main class="max-w-[1500px] mx-auto px-4 py-10">
     <header class="mb-6">
       <h1 class="text-3xl font-semibold tracking-tight">Bankroll Simulation (Dark • Preloaded)</h1>

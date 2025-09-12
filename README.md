@@ -4,4 +4,4 @@ This WordPress plugin provides a bankroll simulation UI with real-time Chart.js 
 
 Embed the interface in posts or pages using the shortcode `[strategy_maker]`.
 
-A Light/Dark mode toggle is included in the interface.
+The interface uses a dark theme by default.

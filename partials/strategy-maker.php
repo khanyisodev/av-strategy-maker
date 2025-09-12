@@ -1,16 +1,16 @@
-<div id="strategy-maker" class="strategy-maker dark min-h-screen bg-white text-slate-900 antialiased dark:bg-slate-900 dark:text-slate-100">
+<div id="strategy-maker" class="strategy-maker dark min-h-screen antialiased dark:bg-slate-900 dark:text-slate-100">
   <main class="max-w-[1500px] mx-auto px-4 py-10">
       <div class="flex justify-end mb-4">
         <button id="themeToggle" class="px-3 py-2 rounded-lg bg-gray-200 text-slate-900 dark:bg-slate-700 dark:text-slate-100">Light Mode</button>
       </div>
       <header class="mb-6">
-        <h1 class="text-3xl font-semibold tracking-tight">Bankroll Simulation (Dark • Preloaded)</h1>
+        <h1 class="text-3xl font-semibold tracking-tight text-slate-100">Bankroll Simulation (Dark • Preloaded)</h1>
         <p class="mt-1 text-gray-600 dark:text-slate-100">
           Bets only when <span class="font-semibold">previous &gt; 1.6</span>. Stream runs <span class="font-semibold">1.5× slower</span>.
         </p>
       </header>
 
-      <section class="card rounded-2xl bg-white ring-1 ring-slate-200 p-5 md:p-6 dark:bg-slate-900/70 dark:ring-slate-800">
+      <section class="card rounded-2xl ring-1 ring-slate-200 p-5 md:p-6 dark:bg-slate-900/70 dark:ring-slate-800">
         <!-- Toolbar -->
         <div class="flex flex-wrap items-center gap-3 mb-4">
           <button id="btnToggle" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[.98] font-medium">
@@ -25,7 +25,7 @@
 
           <div class="flex items-center gap-2">
             <label for="window" class="text-sm text-gray-700 dark:text-slate-100">Window</label>
-            <select id="window" class="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm dark:bg-slate-800/80 dark:border-slate-700">
+            <select id="window" class="border border-slate-300 rounded-lg px-3 py-2 text-sm dark:bg-slate-800/80 dark:border-slate-700">
               <option value="60">Last 60 pts</option>
               <option value="120" selected>Last 120 pts</option>
               <option value="240">Last 240 pts</option>
@@ -39,7 +39,7 @@
           <!-- Cashout input (default 3.7) -->
           <div class="flex items-center gap-2">
             <label for="cashout" class="text-sm text-gray-700 dark:text-slate-100">Cashout</label>
-            <input id="cashout" type="number" step="0.01" min="1.01" value="3.70" class="w-24 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 dark:bg-slate-800/80 dark:border-slate-700 dark:text-slate-100" />
+            <input id="cashout" type="number" step="0.01" min="1.01" value="3.70" class="w-24 border border-slate-300 rounded-lg px-3 py-2 text-sm dark:bg-slate-800/80 dark:border-slate-700 dark:text-slate-100" />
           </div>
 
           <button id="btnReset" class="px-3 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-sm border border-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700">

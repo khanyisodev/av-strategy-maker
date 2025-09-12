@@ -349,7 +349,7 @@
     const btnReset    = document.getElementById('btnReset');
     const speedEl     = document.getElementById('speed');
     const windowEl    = document.getElementById('window');
-    const smoothEl    = document.getElementById('smooth');
+    const btnSmooth   = document.getElementById('btnSmooth');
     const themeToggle = document.getElementById('themeToggle');
     const rootEl      = document.getElementById('strategy-maker');
     const siteContent = document.getElementById('lqd-site-content');
@@ -512,10 +512,13 @@
     });
     speedEl.addEventListener('input', () => { if (running) startLoop(); });
     windowEl.addEventListener('change', () => { clampWindow(); chart.update(); });
-    smoothEl.addEventListener('change', () => {
-      const t = smoothEl.checked ? 0.35 : 0;
+    let smoothOn = true;
+    btnSmooth.addEventListener('click', () => {
+      smoothOn = !smoothOn;
+      const t = smoothOn ? 0.35 : 0;
       chart.data.datasets.forEach(ds => ds.tension = t);
       chart.update();
+      btnSmooth.textContent = smoothOn ? 'Smooth On' : 'Smooth Off';
     });
     cashoutEl.addEventListener('input', () => {
       const v = parseFloat(cashoutEl.value);

@@ -1,11 +1,9 @@
 body,
-#lqd-site-content,
-#strategy-maker {
+#lqd-site-content {
     background-color: #fff;
 }
 body.dark,
-#lqd-site-content.dark,
-#strategy-maker.dark {
+#lqd-site-content.dark {
     background-color: #0f172a;
 }
 

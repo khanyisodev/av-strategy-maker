@@ -1,4 +1,4 @@
-<div id="strategy-maker" class="strategy-maker min-h-screen bg-white text-slate-900 antialiased dark:bg-slate-900 dark:text-slate-100">
+<div id="strategy-maker" class="strategy-maker dark min-h-screen bg-white text-slate-900 antialiased dark:bg-slate-900 dark:text-slate-100">
   <main class="max-w-[1500px] mx-auto px-4 py-10">
       <div class="flex justify-end mb-4">
         <button id="themeToggle" class="px-3 py-2 rounded-lg bg-gray-200 text-slate-900 dark:bg-slate-700 dark:text-slate-100">Light Mode</button>
@@ -32,10 +32,9 @@
             </select>
           </div>
 
-          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-slate-100">
-            <input id="smooth" type="checkbox" class="size-4 accent-indigo-500" checked />
-            Smooth line
-          </label>
+          <button id="btnSmooth" class="px-3 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-sm border border-gray-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700">
+            Smooth On
+          </button>
 
           <!-- Cashout input (default 3.7) -->
           <div class="flex items-center gap-2">

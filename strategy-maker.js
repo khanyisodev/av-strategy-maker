@@ -291,6 +291,9 @@ function init() {
         risk: { enabled:false, rounds:0, resumeAbove:0, restart:'start', second:{ enabled:false, amount:0, restart:'restart', lockRounds:0 } },
         bankroll: INITIAL_BANKROLL,
         martiIdx: 0,
+        lossStreak: 0,
+        cooldown: false,
+        resumeHits: 0,
         data: Array.from({ length: maxPoints }, () => INITIAL_BANKROLL),
         color,
         collapsed: false
@@ -328,6 +331,9 @@ function init() {
             const maxPoints = parseInt(windowEl.value, 10);
             base.bankroll = INITIAL_BANKROLL;
             base.martiIdx = 0;
+            base.lossStreak = 0;
+            base.cooldown = false;
+            base.resumeHits = 0;
             base.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
             strategies.push(base);
           });
@@ -381,7 +387,7 @@ function init() {
             <div class="mt-2 text-sm text-slate-200"><label class="flex items-center gap-2"><input type="checkbox" data-field="risk" ${s.risk.enabled?'checked':''}/>Enable Risk Management</label></div>
             <div class="risk-fields ${s.risk.enabled?'':'hidden'} space-y-2 mt-1">
               <label class="flex items-center gap-2 text-sm text-slate-200">Rounds before pause<input type="number" data-field="riskRounds" value="${s.risk.rounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
-              <label class="flex items-center gap-2 text-sm text-slate-200">Resume after<input type="number" step="0.01" data-field="riskResume" value="${s.risk.resumeAbove}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/>x above cashout</label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">Resume after<input type="number" min="0" step="1" data-field="riskResume" value="${s.risk.resumeAbove}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/>hits &ge; cashout</label>
               <label class="flex items-center gap-2 text-sm text-slate-200">Restart martingale<select data-field="riskRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="start" ${s.risk.restart==='start'?'selected':''}>From start</option><option value="continue" ${s.risk.restart==='continue'?'selected':''}>Where left off</option></select></label>
               <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="secondBetEnabled" ${s.risk.second.enabled?'checked':''}/>Second bet</label>
               <div class="second-bet-fields ${s.risk.second.enabled?'':'hidden'} space-y-2">
@@ -412,7 +418,7 @@ function init() {
         case 'value': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].value = parseFloat(e.target.value); break; }
         case 'risk': s.risk.enabled = e.target.checked; renderStrategies(); break;
         case 'riskRounds': s.risk.rounds = parseInt(e.target.value,10) || 0; break;
-        case 'riskResume': s.risk.resumeAbove = parseFloat(e.target.value) || 0; break;
+        case 'riskResume': s.risk.resumeAbove = parseInt(e.target.value,10) || 0; break;
         case 'riskRestart': s.risk.restart = e.target.value; break;
         case 'secondBetEnabled': s.risk.second.enabled = e.target.checked; renderStrategies(); break;
         case 'secondBetAmount': s.risk.second.amount = parseFloat(e.target.value) || 0; break;
@@ -434,6 +440,9 @@ function init() {
         const maxPoints = parseInt(windowEl.value, 10);
         clone.bankroll = INITIAL_BANKROLL;
         clone.martiIdx = 0;
+        clone.lossStreak = 0;
+        clone.cooldown = false;
+        clone.resumeHits = 0;
         clone.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
         clone.collapsed = false;
         strategies.push(clone);
@@ -530,6 +539,21 @@ function init() {
       renderLastMultipliers(usedMultipliers);
 
       strategies.forEach(s => {
+        if (s.cooldown) {
+          if (currMult >= s.cashout) {
+            s.resumeHits++;
+            if (s.resumeHits >= s.risk.resumeAbove) {
+              s.cooldown = false;
+              s.resumeHits = 0;
+              s.lossStreak = 0;
+              if (s.risk.restart === 'start') s.martiIdx = 0;
+            }
+          }
+          s.data.push(s.bankroll);
+          if (s.data.length > labels.length) s.data.shift();
+          return;
+        }
+
         const shouldBet = evaluateConditions(s.conditions, usedMultipliers);
         if (shouldBet) {
           const seqMul = s.martingale && s.sequence.length ? (s.sequence[s.martiIdx] || 1) : 1;
@@ -537,9 +561,15 @@ function init() {
           if (currMult >= s.cashout) {
             s.bankroll += bet * (s.cashout - 1);
             s.martiIdx = 0;
+            s.lossStreak = 0;
           } else {
             s.bankroll -= bet;
             if (s.martingale && s.martiIdx < s.sequence.length - 1) s.martiIdx++;
+            s.lossStreak++;
+            if (s.risk.enabled && s.risk.rounds > 0 && s.lossStreak >= s.risk.rounds) {
+              s.cooldown = true;
+              s.resumeHits = 0;
+            }
           }
         }
         s.data.push(s.bankroll);
@@ -583,6 +613,9 @@ function init() {
       strategies.forEach(s => {
         s.bankroll = INITIAL_BANKROLL;
         s.martiIdx = 0;
+        s.lossStreak = 0;
+        s.cooldown = false;
+        s.resumeHits = 0;
         s.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
       });
       renderLastMultipliers([]);

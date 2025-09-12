@@ -1,4 +1,6 @@
 function init() {
+  const root = document.getElementById('strategy-maker-root');
+  if (!root) return;
   const siteBody = document.getElementById('lqd-site-content') || document.body;
   siteBody.classList.add('min-h-screen', 'bg-slate-950', 'text-slate-100', 'antialiased');
 
@@ -509,22 +511,24 @@ function init() {
       startLoop();
     });
 
-    document.getElementById("btnSettings").addEventListener("click", function () {
-      const modal = document.getElementById("settingsModal");
-      modal.classList.remove("hidden");
-      modal.setAttribute("aria-hidden", "false");
-    });
-    document.getElementById("settingsClose").addEventListener("click", function () {
-      const modal = document.getElementById("settingsModal");
-      modal.classList.add("hidden");
-      modal.setAttribute("aria-hidden", "true");
-    });
-    document.getElementById("settingsModal").addEventListener("click", function (event) {
-      if (event.target === this) {
-        this.classList.add("hidden");
-        this.setAttribute("aria-hidden", "true");
+    if (btnSettings && settingsModal) {
+      btnSettings.addEventListener("click", () => {
+        settingsModal.classList.remove("hidden");
+        settingsModal.setAttribute("aria-hidden", "false");
+      });
+      if (settingsClose) {
+        settingsClose.addEventListener("click", () => {
+          settingsModal.classList.add("hidden");
+          settingsModal.setAttribute("aria-hidden", "true");
+        });
       }
-    });
+      settingsModal.addEventListener("click", (event) => {
+        if (event.target === settingsModal) {
+          settingsModal.classList.add("hidden");
+          settingsModal.setAttribute("aria-hidden", "true");
+        }
+      });
+    }
 
     window.addEventListener('beforeunload', stopLoop);
   }

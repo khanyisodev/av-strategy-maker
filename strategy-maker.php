@@ -5,15 +5,21 @@ Description: Display the bankroll simulation UI via shortcode [strategy_maker].
 Version: 1.0.0
 */
 
-function strategy_maker_enqueue() {
-    wp_enqueue_script('tailwind', 'https://cdn.tailwindcss.com', [], null, false);
-    wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js', [], null, true);
-    wp_enqueue_style('strategy-maker', plugins_url('strategy-maker.css', __FILE__), [], '1.0.0');
-    wp_enqueue_script('strategy-maker', plugins_url('strategy-maker.js', __FILE__), ['chartjs'], '1.0.0', true);
+function strategy_maker_register_assets() {
+    wp_register_script('tailwind', 'https://cdn.tailwindcss.com', [], null, false);
+    wp_register_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js', [], null, true);
+    wp_register_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css', [], '6.5.1');
+    wp_register_style('strategy-maker', plugins_url('strategy-maker.css', __FILE__), [], '1.0.0');
+    wp_register_script('strategy-maker', plugins_url('strategy-maker.js', __FILE__), ['chartjs'], '1.0.0', true);
 }
+add_action('wp_enqueue_scripts', 'strategy_maker_register_assets');
 
 function strategy_maker_shortcode() {
-    strategy_maker_enqueue();
+    wp_enqueue_script('tailwind');
+    wp_enqueue_script('chartjs');
+    wp_enqueue_style('font-awesome');
+    wp_enqueue_style('strategy-maker');
+    wp_enqueue_script('strategy-maker');
     ob_start();
     ?>
     <div id="strategy-maker-root">
@@ -57,9 +63,7 @@ function strategy_maker_shortcode() {
             </button>
 
             <button id="btnSettings" type="button" class="ml-auto p-2 text-slate-400 hover:text-slate-200">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path d="M11.3 1.046a1 1 0 00-2.6 0l-.197.758a8.05 8.05 0 00-1.964.806l-.692-.4a1 1 0 00-1.366.366l-.5.866a1 1 0 00.366 1.366l.692.4a8.03 8.03 0 000 1.612l-.692.4a1 1 0 00-.366 1.366l.5.866a1 1 0 001.366.366l.692-.4a8.05 8.05 0 001.964.806l.197.758a1 1 0 002.6 0l.197-.758a8.05 8.05 0 001.964-.806l.692.4a1 1 0 001.366-.366l.5-.866a1 1 0 00-.366-1.366l-.692-.4a8.03 8.03 0 000-1.612l.692-.4a1 1 0 00.366-1.366l-.5-.866a1 1 0 00-1.366-.366l-.692.4a8.05 8.05 0 00-1.964-.806l-.197-.758zM10 13a3 3 0 110-6 3 3 0 010 6z" />
-              </svg>
+              <i class="fas fa-cog"></i>
               <span class="sr-only">Settings</span>
             </button>
           </div>

@@ -95,10 +95,12 @@ function strategy_maker_shortcode() {
           </div>
         </section>
       </main>
-      <div id="settingsModal" class="hidden fixed inset-0 bg-slate-900/60 flex items-center justify-center">
+      <div id="settingsModal" aria-hidden="true" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/60">
         <div class="bg-slate-800 p-6 rounded-xl max-w-sm w-full">
           <h2 class="text-lg font-medium text-slate-100 mb-4">Settings</h2>
-          <button id="settingsClose" class="mt-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm">Close</button>
+          <button id="settingsClose" type="button" class="mt-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm">
+            Close
+          </button>
         </div>
       </div>
     </div>

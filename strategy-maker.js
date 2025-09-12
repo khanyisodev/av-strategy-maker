@@ -530,9 +530,18 @@ function init() {
     });
 
     if (btnSettings && settingsModal && settingsClose) {
-      btnSettings.addEventListener('click', () => settingsModal.classList.remove('hidden'));
-      settingsClose.addEventListener('click', () => settingsModal.classList.add('hidden'));
-      settingsModal.addEventListener('click', e => { if (e.target === settingsModal) settingsModal.classList.add('hidden'); });
+      const openSettings = () => {
+        settingsModal.classList.remove('hidden');
+        settingsModal.setAttribute('aria-hidden', 'false');
+      };
+      const closeSettings = () => {
+        settingsModal.classList.add('hidden');
+        settingsModal.setAttribute('aria-hidden', 'true');
+      };
+      btnSettings.addEventListener('click', openSettings);
+      settingsClose.addEventListener('click', closeSettings);
+      settingsModal.addEventListener('click', e => { if (e.target === settingsModal) closeSettings(); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); });
     }
 
     window.addEventListener('beforeunload', stopLoop);

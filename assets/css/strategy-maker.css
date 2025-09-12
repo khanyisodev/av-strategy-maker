@@ -1,0 +1,6 @@
+    .card { transition: transform .2s ease, box-shadow .2s ease; }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .mono { font-variant-numeric: tabular-nums; }
+.strategy-maker.light {
+  filter: invert(1) hue-rotate(180deg);
+}

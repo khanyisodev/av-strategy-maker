@@ -1,20 +1,5 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Bankroll Simulation • Dark • Preloaded • Guarded Martingale</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Tailwind (CDN) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Chart.js (CDN) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
-  <style>
-    .card { transition: transform .2s ease, box-shadow .2s ease; }
-    .card:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,.25); }
-    .mono { font-variant-numeric: tabular-nums; }
-  </style>
-</head>
-<body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
+<div id="strategy-maker" class="strategy-maker">
+  <button id="modeToggle" class="mb-4 px-4 py-2 rounded-xl bg-slate-800 text-slate-100">Light Mode</button>
   <main class="max-w-[1500px] mx-auto px-4 py-10">
     <header class="mb-6">
       <h1 class="text-3xl font-semibold tracking-tight">Bankroll Simulation (Dark • Preloaded)</h1>
@@ -663,5 +648,4 @@
 
     window.addEventListener('beforeunload', stopLoop);
   </script>
-</body>
-</html>
+</div>

@@ -12,9 +12,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 function sm_enqueue_assets() {
     wp_enqueue_script('tailwind', 'https://cdn.tailwindcss.com', [], null, true);
+    wp_add_inline_script('tailwind', 'tailwind.config = { darkMode: "class" };', 'before');
     wp_enqueue_script('chartjs', 'https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js', [], null, true);
     wp_enqueue_style('sm-style', plugins_url('assets/css/strategy-maker.css', __FILE__));
     wp_enqueue_script('sm-script', plugins_url('assets/js/strategy-maker.js', __FILE__), ['chartjs'], null, true);
+    wp_enqueue_script('sm-mode', plugins_url('assets/js/mode-toggle.js', __FILE__), ['sm-script'], null, true);
 }
 add_action('wp_enqueue_scripts', 'sm_enqueue_assets');
 

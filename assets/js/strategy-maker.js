@@ -1,10 +1,3 @@
-document.addEventListener('DOMContentLoaded', () => {
-  const rootEl = document.getElementById('strategy-maker');
-  const modeToggle = document.getElementById('modeToggle');
-  modeToggle.addEventListener('click', () => {
-    rootEl.classList.toggle('light');
-    modeToggle.textContent = rootEl.classList.contains('light') ? 'Dark Mode' : 'Light Mode';
-  });
     // -----------------------------
     // Preloaded multipliers (looping)
     // -----------------------------
@@ -551,5 +544,3 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('beforeunload', stopLoop);
-
-});

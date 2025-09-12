@@ -221,110 +221,24 @@ function init() {
     // Chart.js setup (dark)
     // -----------------------------
     const ctx = document.getElementById('chart').getContext('2d');
-    function gradients(ctx) {
-      const { height } = ctx.canvas;
-      const g1 = ctx.createLinearGradient(0, 0, 0, height); // indigo
-      g1.addColorStop(0, 'rgba(99,102,241,0.35)');
-      g1.addColorStop(1, 'rgba(99,102,241,0.05)');
-
-      const g2 = ctx.createLinearGradient(0, 0, 0, height); // emerald
-      g2.addColorStop(0, 'rgba(16,185,129,0.35)');
-      g2.addColorStop(1, 'rgba(16,185,129,0.05)');
-
-      const g3 = ctx.createLinearGradient(0, 0, 0, height); // amber
-      g3.addColorStop(0, 'rgba(245,158,11,0.35)');
-      g3.addColorStop(1, 'rgba(245,158,11,0.05)');
-
-      const g4 = ctx.createLinearGradient(0, 0, 0, height); // rose
-      g4.addColorStop(0, 'rgba(244,63,94,0.35)');
-      g4.addColorStop(1, 'rgba(244,63,94,0.05)');
-
-      return { g1, g2, g3, g4 };
-    }
-    let { g1, g2, g3, g4 } = gradients(ctx);
-    const ro = new ResizeObserver(() => { ({ g1, g2, g3, g4 } = gradients(ctx)); chart.update('none'); });
-    ro.observe(ctx.canvas);
+    const COLOR_PALETTE = ['#6366F1', '#10B981', '#F59E0B', '#F43F5E', '#3B82F6', '#EF4444', '#14B8A6', '#8B5CF6'];
 
     const maxPointsDefault = 120;
     let tick = 0;
     let labels = Array.from({ length: maxPointsDefault }, (_, i) => i - maxPointsDefault);
 
-    // Bankroll states
-    let noM_bankroll = INITIAL_BANKROLL;     // fixed 1.5% of initial
-    let withM_bankroll = INITIAL_BANKROLL;   // martingale
-    let dyn_bankroll = INITIAL_BANKROLL;     // 1.5% of current balance
-    let guard_bankroll = INITIAL_BANKROLL;   // guarded martingale
-
-    // Martingale indices
-    let withM_martiIdx = 0;
-    let guard_martiIdx = 0;
-
-    // Guard state
-    let guard_lossStreak = 0;         // consecutive losses while betting
-    let guard_cooldown = false;       // true => stop betting
-    let guard_resumeCount = 0;        // need 2 qualifying highs to resume
+    const strategies = [];
 
     // Multipliers state
     let usedMultipliers = [];
     let prevMult = null;
     let preloadIdx = 0;
 
-    // Cashout state (live) default 3.7
-    let cashout = parseFloat(cashoutEl.value) || 3.7;
-
-    // Visible series (seed flat at initial)
-    let noM_series    = Array.from({ length: maxPointsDefault }, () => INITIAL_BANKROLL);
-    let withM_series  = Array.from({ length: maxPointsDefault }, () => INITIAL_BANKROLL);
-    let dyn_series    = Array.from({ length: maxPointsDefault }, () => INITIAL_BANKROLL);
-    let guard_series  = Array.from({ length: maxPointsDefault }, () => INITIAL_BANKROLL);
+    const defaultCashout = parseFloat(cashoutEl.value) || 3.7;
 
     const chart = new Chart(ctx, {
       type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'No M - LM',
-            data: noM_series,
-            borderColor: 'rgba(99,102,241,1)',
-            backgroundColor: () => g1,
-            fill: true,
-            borderWidth: 2,
-            tension: 0.35,
-            pointRadius: 0,
-          },
-          {
-            label: 'With M - LM',
-            data: withM_series,
-            borderColor: 'rgba(16,185,129,1)',
-            backgroundColor: () => g2,
-            fill: true,
-            borderWidth: 2,
-            tension: 0.35,
-            pointRadius: 0,
-          },
-          {
-            label: 'No M - LM (Curr %)',
-            data: dyn_series,
-            borderColor: 'rgba(245,158,11,1)', // amber
-            backgroundColor: () => g3,
-            fill: true,
-            borderWidth: 2,
-            tension: 0.35,
-            pointRadius: 0,
-          },
-          {
-            label: 'With M - LM (Guard)',
-            data: guard_series,
-            borderColor: 'rgba(244,63,94,1)', // rose
-            backgroundColor: () => g4,
-            fill: true,
-            borderWidth: 2,
-            tension: 0.35,
-            pointRadius: 0,
-          }
-        ]
-      },
+      data: { labels, datasets: [] },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -347,8 +261,7 @@ function init() {
     });
 
     // -----------------------------
-    // Simulation logic (only bet when prev > 1.6; win if curr > cashout)
-    // -----------------------------
+    // Simulation & UI logic
     const btnToggle     = document.getElementById('btnToggle');
     const btnReset      = document.getElementById('btnReset');
     const btnSettings   = document.getElementById('btnSettings');
@@ -356,198 +269,267 @@ function init() {
     const settingsClose = document.getElementById('settingsClose');
     const speedEl       = document.getElementById('speed');
     const windowEl      = document.getElementById('window');
+    const strategiesWrap= document.getElementById('strategiesWrap');
+    const addStrategyBtn= document.getElementById('addStrategy');
 
     let running = true;
     let interval = null;
 
-    function clampWindow() {
+    function defaultStrategy() {
+      const color = COLOR_PALETTE[strategies.length % COLOR_PALETTE.length];
       const maxPoints = parseInt(windowEl.value, 10);
-      if (labels.length > maxPoints) {
-        labels = labels.slice(-maxPoints);
-        chart.data.labels = labels;
-        chart.data.datasets.forEach(ds => { ds.data = ds.data.slice(-maxPoints); });
-      }
+      return {
+        name: '',
+        cashout: defaultCashout,
+        show: true,
+        martingale: false,
+        sequence: [],
+        conditions: [],
+        risk: { enabled:false, rounds:0, resumeAbove:0, restart:'start', second:{ enabled:false, amount:0, restart:'restart', lockRounds:0 } },
+        bankroll: INITIAL_BANKROLL,
+        martiIdx: 0,
+        data: Array.from({ length: maxPoints }, () => INITIAL_BANKROLL),
+        color
+      };
     }
 
-    function nextPreloaded() {
-      if (preloadIdx >= PRELOADED.length) {
-        if (!LOOP) return null;
-        preloadIdx = 0; // loop
+    function renderStrategies() {
+      strategiesWrap.innerHTML = strategies.map((s,i) => {
+        const condRows = s.conditions.map((c,j)=>`
+          <div class="flex items-center gap-2 mb-1" data-cond="${j}">
+            ${j>0?`<select data-field="logic" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
+                      <option value="AND" ${c.logic==='AND'?'selected':''}>AND</option>
+                      <option value="OR" ${c.logic==='OR'?'selected':''}>OR</option>
+                    </select>`:''}
+            <span class="text-xs">Prev Mult</span>
+            <select data-field="pos" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
+              ${Array.from({length:10},(_,k)=>`<option value="${k+1}" ${c.pos==k+1?'selected':''}>${k+1}</option>`).join('')}
+            </select>
+            <select data-field="op" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
+              <option value=">">></option>
+              <option value="<"><</option>
+              <option value=">=">>=</option>
+              <option value="<="><=</option>
+              <option value="==">=</option>
+            </select>
+            <input type="number" step="0.01" data-field="value" value="${c.value}" class="w-20 bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs"/>
+            <button type="button" data-action="remove-cond" class="text-rose-400 text-xs">&times;</button>
+          </div>`).join('');
+        return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${i}">
+          <div class="flex justify-between items-center">
+            <span class="text-sm font-medium text-slate-100">Strategy ${i+1}</span>
+            <button type="button" data-action="remove" class="text-rose-400 text-xs">Remove</button>
+          </div>
+          <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="show" ${s.show?'checked':''}/> Show in chart</label>
+          <input type="text" data-field="name" placeholder="Name" value="${s.name}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
+          <label class="flex items-center gap-2 text-sm text-slate-200">Cashout <input type="number" step="0.01" min="1.01" data-field="cashout" value="${s.cashout}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+          <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="martingale" ${s.martingale?'checked':''}/> Martingale</label>
+          <input type="text" data-field="sequence" placeholder="1, 1.88, 2.31" value="${s.sequence.join(', ')}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm ${s.martingale?'':'hidden'}" />
+          <div class="mt-2 text-sm text-slate-200">Conditions</div>
+          <div class="conditions" data-cond-wrap>${condRows}</div>
+          <button type="button" data-action="add-cond" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Condition</button>
+          <div class="mt-2 text-sm text-slate-200"><label class="flex items-center gap-2"><input type="checkbox" data-field="risk" ${s.risk.enabled?'checked':''}/>Enable Risk Management</label></div>
+          <div class="risk-fields ${s.risk.enabled?'':'hidden'} space-y-2 mt-1">
+            <label class="flex items-center gap-2 text-sm text-slate-200">Rounds before pause<input type="number" data-field="riskRounds" value="${s.risk.rounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+            <label class="flex items-center gap-2 text-sm text-slate-200">Resume after<input type="number" step="0.01" data-field="riskResume" value="${s.risk.resumeAbove}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/>x above cashout</label>
+            <label class="flex items-center gap-2 text-sm text-slate-200">Restart martingale<select data-field="riskRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="start" ${s.risk.restart==='start'?'selected':''}>From start</option><option value="continue" ${s.risk.restart==='continue'?'selected':''}>Where left off</option></select></label>
+            <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="secondBetEnabled" ${s.risk.second.enabled?'checked':''}/>Second bet</label>
+            <div class="second-bet-fields ${s.risk.second.enabled?'':'hidden'} space-y-2">
+              <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount<input type="number" data-field="secondBetAmount" value="${s.risk.second.amount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">When bet1 wins<select data-field="secondRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="restart" ${s.risk.second.restart==='restart'?'selected':''}>Restart</option><option value="lock" ${s.risk.second.restart==='lock'?'selected':''}>Lock</option></select></label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">Lock rounds<input type="number" data-field="secondLockRounds" value="${s.risk.second.lockRounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    strategiesWrap.addEventListener('input', (e) => {
+      const idx = e.target.closest('[data-index]')?.dataset.index;
+      if (idx === undefined) return;
+      const s = strategies[idx];
+      const field = e.target.dataset.field;
+      switch (field) {
+        case 'show': s.show = e.target.checked; syncChartDatasets(); break;
+        case 'name': s.name = e.target.value; syncChartDatasets(); break;
+        case 'cashout': s.cashout = parseFloat(e.target.value) || s.cashout; break;
+        case 'martingale': s.martingale = e.target.checked; renderStrategies(); break;
+        case 'sequence': s.sequence = e.target.value.split(',').map(v=>parseFloat(v.trim())).filter(n=>!isNaN(n)); break;
+        case 'logic': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].logic = e.target.value; break; }
+        case 'pos': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].pos = parseInt(e.target.value,10); break; }
+        case 'op': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].op = e.target.value; break; }
+        case 'value': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].value = parseFloat(e.target.value); break; }
+        case 'risk': s.risk.enabled = e.target.checked; renderStrategies(); break;
+        case 'riskRounds': s.risk.rounds = parseInt(e.target.value,10) || 0; break;
+        case 'riskResume': s.risk.resumeAbove = parseFloat(e.target.value) || 0; break;
+        case 'riskRestart': s.risk.restart = e.target.value; break;
+        case 'secondBetEnabled': s.risk.second.enabled = e.target.checked; renderStrategies(); break;
+        case 'secondBetAmount': s.risk.second.amount = parseFloat(e.target.value) || 0; break;
+        case 'secondRestart': s.risk.second.restart = e.target.value; break;
+        case 'secondLockRounds': s.risk.second.lockRounds = parseInt(e.target.value,10) || 0; break;
       }
-      return PRELOADED[preloadIdx++];
+    });
+
+    strategiesWrap.addEventListener('click', (e) => {
+      const idx = e.target.closest('[data-index]')?.dataset.index;
+      if (idx === undefined) return;
+      const s = strategies[idx];
+      const action = e.target.dataset.action;
+      if (action === 'remove') { strategies.splice(idx,1); renderStrategies(); syncChartDatasets(); }
+      if (action === 'add-cond') { s.conditions.push({ logic: 'AND', pos:1, op:'>', value:1.0 }); renderStrategies(); }
+      if (action === 'remove-cond') { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions.splice(ci,1); renderStrategies(); }
+    });
+
+    if (addStrategyBtn) {
+      addStrategyBtn.addEventListener('click', () => {
+        strategies.push(defaultStrategy());
+        renderStrategies();
+        syncChartDatasets();
+      });
+    }
+
+    function syncChartDatasets() {
+      chart.data.datasets = strategies.filter(s=>s.show).map(s => ({
+        label: s.name || 'Strategy',
+        data: s.data,
+        borderColor: s.color,
+        backgroundColor: hexToRgba(s.color, 0.15),
+        fill: true,
+        borderWidth: 2,
+        tension: 0.35,
+        pointRadius: 0
+      }));
+      chart.update('none');
+    }
+
+    function evaluateConditions(conds, history) {
+      if (conds.length === 0) return false;
+      const evalCond = c => {
+        const val = history[history.length - c.pos];
+        if (val === undefined) return false;
+        switch (c.op) {
+          case '>': return val > c.value;
+          case '<': return val < c.value;
+          case '>=': return val >= c.value;
+          case '<=': return val <= c.value;
+          case '==': return val === c.value;
+          default: return false;
+        }
+      };
+      let result = evalCond(conds[0]);
+      for (let i = 1; i < conds.length; i++) {
+        const c = conds[i];
+        const r = evalCond(c);
+        result = c.logic === 'OR' ? (result || r) : (result && r);
+      }
+      return result;
+    }
+
+    function clampWindow() {
+      const maxPoints = parseInt(windowEl.value, 10);
+      const excess = labels.length - maxPoints;
+      if (excess > 0) {
+        labels.splice(0, excess);
+        strategies.forEach(s => s.data.splice(0, excess));
+      }
+      chart.data.labels = labels;
     }
 
     function step() {
-      tick++;
-
-      const currMult = nextPreloaded();
-      if (currMult == null) { stopLoop(); return; }
-
+      if (preloadIdx >= PRELOADED.length) {
+        if (!LOOP) return;
+        preloadIdx = 0;
+      }
+      const currMult = PRELOADED[preloadIdx++];
       usedMultipliers.push(currMult);
+      if (usedMultipliers.length > 10) usedMultipliers.shift();
       renderLastMultipliers(usedMultipliers);
 
-      const shouldBet = prevMult !== null && prevMult > 1.6;
-      const profitMult = Math.max(0, cashout - 1);
-
-      // --- NO MARTINGALE: fixed 1.5% of initial (R75)
-      if (shouldBet) {
-        const win = currMult > cashout;
-        const bet1 = INITIAL_BET;
-        noM_bankroll += win ? bet1 * profitMult : -bet1;
-      }
-
-      // --- WITH M - LM: martingale sequence on base 75
-      if (shouldBet) {
-        const win = currMult > cashout;
-        const betM = INITIAL_BET * MARTI_SEQ[withM_martiIdx];
-        if (win) {
-          withM_bankroll += betM * profitMult;
-          withM_martiIdx = 0;
-        } else {
-          withM_bankroll -= betM;
-          if (withM_martiIdx < MARTI_SEQ.length - 1) withM_martiIdx++;
-        }
-      }
-
-      // --- NO MARTINGALE (Curr %): 1.5% of CURRENT balance
-      if (shouldBet) {
-        const win = currMult > cashout;
-        const dynBet = dyn_bankroll * 0.015;
-        dyn_bankroll += win ? dynBet * profitMult : -dynBet;
-      }
-
-      // --- WITH M - LM (Guard): martingale + stop/resume logic
-      // If in cooldown, don't bet; count qualifying highs to resume.
-      if (guard_cooldown) {
-        if (shouldBet && currMult > cashout) {
-          guard_resumeCount++;
-        }
-        if (guard_resumeCount >= 2) {
-          guard_cooldown = false;
-          guard_resumeCount = 0;
-          guard_martiIdx = 0;       // resume from base
-        }
-      } else {
+      strategies.forEach(s => {
+        const shouldBet = evaluateConditions(s.conditions, usedMultipliers);
         if (shouldBet) {
-          const win = currMult > cashout;
-          const betG = INITIAL_BET * MARTI_SEQ[guard_martiIdx];
-          if (win) {
-            guard_bankroll += betG * profitMult;
-            guard_martiIdx = 0;
-            guard_lossStreak = 0;   // reset streak on win
+          const seqMul = s.martingale && s.sequence.length ? (s.sequence[s.martiIdx] || 1) : 1;
+          const bet = INITIAL_BET * seqMul;
+          if (currMult >= s.cashout) {
+            s.bankroll += bet * (s.cashout - 1);
+            s.martiIdx = 0;
           } else {
-            guard_bankroll -= betG;
-            if (guard_martiIdx < MARTI_SEQ.length - 1) guard_martiIdx++;
-            guard_lossStreak++;
-            if (guard_lossStreak > 7) {
-              // Enter cooldown
-              guard_cooldown = true;
-              guard_lossStreak = 0;
-              guard_martiIdx = 0;  // reset progression while paused
-            }
+            s.bankroll -= bet;
+            if (s.martingale && s.martiIdx < s.sequence.length - 1) s.martiIdx++;
           }
         }
-      }
+        s.data.push(s.bankroll);
+        if (s.data.length > labels.length) s.data.shift();
+      });
 
-      // Append points
-      labels.push(tick);
-      chart.data.datasets[0].data.push(noM_bankroll);
-      chart.data.datasets[1].data.push(withM_bankroll);
-      chart.data.datasets[2].data.push(dyn_bankroll);
-      chart.data.datasets[3].data.push(guard_bankroll);
+      labels.push(tick++);
       clampWindow();
-      chart.update('none');
-
-      // Status line (brief)
-      let guardState = guard_cooldown ? ` • guard: cooldown (resume hits: ${guard_resumeCount}/2)` : '';
-      if (prevMult === null) {
-        statusEl.textContent = `Round ${tick}: first round (no bet) • curr=${currMult.toFixed(2)} • cashout=${cashout.toFixed(2)}${guardState}`;
-      } else {
-        statusEl.textContent = `Round ${tick}: prev=${prevMult.toFixed(2)} • curr=${currMult.toFixed(2)} • cashout=${cashout.toFixed(2)}${guardState}`;
-      }
+      syncChartDatasets();
 
       prevMult = currMult;
     }
 
     function startLoop() {
       stopLoop();
-      const delay = Math.round(parseInt(speedEl.value, 10) * 1.5); // 1.5× slower
+      const delay = Math.round(parseInt(speedEl.value, 10) * 1.5);
       interval = setInterval(step, delay);
     }
     function stopLoop() { if (interval) { clearInterval(interval); interval = null; } }
 
-    // Init
     renderLastMultipliers([]);
     startLoop();
 
-    // Controls
     btnToggle.addEventListener('click', () => {
       running = !running;
       btnToggle.textContent = running ? 'Pause' : 'Resume';
       running ? startLoop() : stopLoop();
     });
     speedEl.addEventListener('input', () => { if (running) startLoop(); });
-    windowEl.addEventListener('change', () => { clampWindow(); chart.update(); });
-    cashoutEl.addEventListener('input', () => {
-      const v = parseFloat(cashoutEl.value);
-      if (!isNaN(v) && v > 1) cashout = v;
-    });
+    windowEl.addEventListener('change', () => { clampWindow(); syncChartDatasets(); });
+    cashoutEl.addEventListener('input', () => {});
 
     btnReset.addEventListener('click', () => {
       tick = 0;
-      noM_bankroll = INITIAL_BANKROLL;
-      withM_bankroll = INITIAL_BANKROLL;
-      dyn_bankroll = INITIAL_BANKROLL;
-      guard_bankroll = INITIAL_BANKROLL;
-
-      withM_martiIdx = 0;
-      guard_martiIdx = 0;
-      guard_lossStreak = 0;
-      guard_cooldown = false;
-      guard_resumeCount = 0;
-
       usedMultipliers = [];
       prevMult = null;
       preloadIdx = 0;
 
-      cashout = parseFloat(cashoutEl.value) || 3.7;
-
       const maxPoints = parseInt(windowEl.value, 10);
       labels = Array.from({ length: maxPoints }, (_, i) => i - maxPoints);
-      chart.data.labels = labels;
-
-      chart.data.datasets[0].data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
-      chart.data.datasets[1].data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
-      chart.data.datasets[2].data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
-      chart.data.datasets[3].data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
-
-      statusEl.textContent = '';
+      strategies.forEach(s => {
+        s.bankroll = INITIAL_BANKROLL;
+        s.martiIdx = 0;
+        s.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+      });
       renderLastMultipliers([]);
+      syncChartDatasets();
       chart.update();
 
       if (!running) { running = true; btnToggle.textContent = 'Pause'; }
       startLoop();
     });
 
-    if (btnSettings && settingsModal) {
-      const openSettings = () => {
-        settingsModal.classList.remove('hidden');
-        settingsModal.setAttribute('aria-hidden', 'false');
-      };
-      const closeSettings = () => {
-        settingsModal.classList.add('hidden');
-        settingsModal.setAttribute('aria-hidden', 'true');
-      };
-      btnSettings.addEventListener('click', openSettings);
-      if (settingsClose) settingsClose.addEventListener('click', closeSettings);
-      settingsModal.addEventListener('click', e => { if (e.target === settingsModal) closeSettings(); });
-      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); });
-    }
+    document.getElementById("btnSettings").addEventListener("click", function () {
+      const modal = document.getElementById("settingsModal");
+      modal.classList.remove("hidden");
+      modal.setAttribute("aria-hidden", "false");
+    });
+    document.getElementById("settingsClose").addEventListener("click", function () {
+      const modal = document.getElementById("settingsModal");
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+    });
+    document.getElementById("settingsModal").addEventListener("click", function (event) {
+      if (event.target === this) {
+        this.classList.add("hidden");
+        this.setAttribute("aria-hidden", "true");
+      }
+    });
 
     window.addEventListener('beforeunload', stopLoop);
-}
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }

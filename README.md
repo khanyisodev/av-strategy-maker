@@ -1,7 +1,15 @@
 # Strategy Maker
 
-WordPress plugin displaying a bankroll simulation with a dark UI. Strategies are user-configurable via a modal and plotted with Chart.js using preloaded multipliers. The interface includes controls for speed, window size and a reset button, while dataset visibility can be toggled via the chart legend. Embed the UI in posts or pages using the `[strategy_maker]` shortcode.
+WordPress plugin that delivers a bankroll simulation dashboard alongside an interactive multiplier pattern scanner. Both experiences ship with a polished dark UI, leverage Tailwind utilities and Chart.js where appropriate, and can be embedded in any post or page via dedicated shortcodes.
 
-The toolbar includes a Font Awesome gear that launches a Tailwind modal where you can add, remove, duplicate or configure strategies (name, cashout, bet amount, martingale sequence, dual-bet settings and risk options). Within a strategy, selecting **OR** starts a new condition group so multiple sets of **AND** conditions can be evaluated separately. Each strategy card collapses so only one is expanded at a time, yet its visibility can still be toggled, and settings persist across refreshes via `localStorage`. When risk management is enabled, a strategy pauses after a set number of consecutive losses and resumes only after seeing a configurable count of multipliers at or above its cashout target.
+## Shortcodes
 
-The latest 25 multipliers are displayed newest-first in a horizontal row of color-coded pills with widths that fit their content.
+- `[strategy_maker]` – renders the bankroll simulation complete with configurable strategies, charting, multiplier history and a Tailwind-powered settings modal that persists to `localStorage`.
+- `[multiplier_pattern_scanner]` – outputs the analytics console from the original HTML prototype, featuring KPI cards, an advanced condition builder, auto-generated diagnostics and demo data to experiment with different filters.
+
+## Features
+
+- Strategy cards support dual bets, martingale sequences, conditional groups (AND/OR) and risk controls, all adjustable through a responsive modal interface.
+- The Chart.js canvas visualises the most recent multipliers while the toolbar provides controls for speed, window size, pausing and resetting the looped demo data.
+- Pattern scanner includes timeframe filters, customisable occurrence targets and a diagnostics panel that runs automated tests to confirm the logic remains sound.
+- Assets are registered and enqueued only when needed to keep page loads lean and to make future overrides easy via filters.

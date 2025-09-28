@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multiplier Pattern Analysis Dashboard</title>
+  <style>
+    :root{
+      --bg:#0f172a; /* slate-900 */
+      --panel:#111827; /* gray-900 */
+      --muted:#94a3b8; /* slate-400 */
+      --text:#e5e7eb; /* gray-200 */
+      --accent:#22d3ee; /* cyan-400 */
+      --good:#22c55e; /* green-500 */
+      --bad:#ef4444; /* red-500 */
+      --card:#0b1220; /* deep */
+      --ring:#334155; /* slate-700 */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 600px at 20% -10%, rgba(34,211,238,.08), transparent 60%),
+                  radial-gradient(1200px 600px at 120% 10%, rgba(99,102,241,.07), transparent 60%),
+                  var(--bg);
+      color:var(--text);
+    }
+    .container{max-width:1200px;margin:24px auto;padding:0 16px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+    .title{font-weight:800;font-size:clamp(20px,2.2vw,30px);letter-spacing:.2px}
+    .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    select, input[type="number"], input[type="text"], input[type="datetime-local"]{
+      background:rgba(15,23,42,.6);color:var(--text);border:1px solid var(--ring);
+      padding:10px 12px;border-radius:10px;outline:none;
+    }
+    select:focus, input:focus{box-shadow:0 0 0 2px rgba(34,211,238,.25)}
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+    .card{grid-column:span 12; background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+      border:1px solid rgba(148,163,184,.15); border-radius:16px; padding:16px 16px 14px; position:relative; overflow:hidden}
+    .card h3{margin:0 0 8px 0;font-size:14px;color:var(--muted);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+    .metric{font-size:28px;font-weight:800;letter-spacing:.3px}
+    .sub{font-size:12px;color:var(--muted)}
+    .stat-row{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+    .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:4px 8px;border-radius:999px;border:1px solid var(--ring);background:rgba(15,23,42,.6)}
+    .good{color:var(--good)}
+    .bad{color:var(--bad)}
+
+    .card.kpi{display:flex;flex-direction:column;gap:6px;min-height:116px}
+    .card.kpi .metric{font-variant-numeric:tabular-nums}
+    .card.scanner{grid-column:span 12}
+    .card.tests{grid-column:span 12}
+
+    @media (min-width: 640px){
+      .card.kpi{grid-column:span 4}
+      .card.scanner{grid-column:span 12}
+      .card.tests{grid-column:span 12}
+    }
+
+    /* Compact inputs for prev/value/target */
+    .cond-offset, .cond-value, #patternTarget{ width:62px; padding:10px 0 10px 13px !important; }
+    .cond-op{min-width:64px}
+    .cond-row{display:flex;align-items:center;gap:8px}
+
+    /* Conditions grid (two columns) */
+    #conditions{margin:20px 0; display:grid; grid-template-columns:1fr 1fr; gap:16px}
+    #conditions .panel{border:1px solid rgba(148,163,184,.15);border-radius:12px;padding:12px;background:rgba(15,23,42,.35)}
+    #conditions .panel h4{margin:0 0 8px 0;font-size:13px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+    #conditions .panel .row{margin-top:8px}
+
+    .btn{background:linear-gradient(180deg, rgba(34,211,238,.15), rgba(34,211,238,.07));
+      color:var(--text);border:1px solid rgba(34,211,238,.35);padding:10px 12px;border-radius:10px;cursor:pointer;font-weight:700}
+    .btn.secondary{background:transparent;border-color:var(--ring)}
+    .btn:active{transform:translateY(1px)}
+
+    .results{margin-top:12px;border-top:1px dashed var(--ring);padding-top:12px}
+    .pill{border:1px solid var(--ring);padding:6px 10px;border-radius:999px;display:inline-flex;gap:6px;align-items:center;font-size:12px}
+    .list{margin-top:10px;display:grid;gap:8px}
+    .hit{padding:10px;border:1px solid rgba(148,163,184,.15);border-radius:12px;background:rgba(15,23,42,.45);display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .hit b{font-variant-numeric: tabular-nums}
+    .mut-seq{opacity:.9}
+    .hit .ok{color:var(--good);font-weight:800}
+    .hit .fail{color:var(--bad);font-weight:800}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .hint{color:var(--muted);font-size:12px}
+    .sep{height:1px;background:linear-gradient(90deg, transparent, rgba(148,163,184,.25), transparent);margin:8px 0}
+    .footer{margin-top:18px;color:var(--muted);font-size:12px;text-align:center}
+    .legend{display:flex;gap:8px;flex-wrap:wrap}
+    .tests-list{display:grid;gap:8px;margin-top:8px}
+    .test{padding:10px;border:1px solid rgba(148,163,184,.15);border-radius:10px;background:rgba(15,23,42,.45)}
+    .test.pass{border-color:rgba(34,197,94,.4)}
+    .test.fail{border-color:rgba(239,68,68,.5)}
+
+    /* Tabs */
+    .tabs{display:flex;gap:6px;margin-bottom:8px}
+    .tab-btn{border:2px solid var(--ring);background:linear-gradient(180deg, rgba(148,163,184,.15), rgba(148,163,184,.07));color:var(--text);padding:10px 14px;border-radius:999px;cursor:pointer;font-weight:800;letter-spacing:.04em;text-transform:uppercase;box-shadow:0 1px 0 rgba(0,0,0,.25)}
+    .tab-btn.active{border-color:rgba(34,211,238,.6);box-shadow:0 0 0 2px rgba(34,211,238,.25) inset, 0 1px 0 rgba(0,0,0,.2);background:linear-gradient(180deg, rgba(34,211,238,.25), rgba(34,211,238,.12))}
+    .tab-panel{display:none}
+    .tab-panel.active{display:block}
+
+    /* Responsive tweak for diagnostics button */
+    @media (min-width: 992px){
+      #toggleDiagBtn{ margin-top:23px; }
+    }
+      /* Make date/time picker icon white (WebKit/Blink) */
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+      filter: invert(1) brightness(1.3) contrast(1.1);
+      opacity: 1;
+      cursor: pointer;
+    }
+
+    $1input[type="date"], input[type="datetime-local"]{ color-scheme: light; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">Multiplier Pattern Analysis</div>
+      <div class="controls">
+        <label>
+          <span class="sub">Platform</span><br>
+          <select id="platformSelect" aria-label="Platform">
+            <option value="Lottostar">Lottostar</option>
+            <option value="Betway">Betway</option>
+          </select>
+        </label>
+        <label>
+          <span class="sub">Timeframe</span><br>
+          <select id="timeframeSelect" aria-label="Timeframe">
+            <option value="all">All time</option>
+            <option value="hour">This Hour</option>
+            <option value="today">Today</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+          </select>
+        </label>
+        <button class="btn secondary" id="toggleDiagBtn" aria-controls="diagnosticsCard" aria-expanded="false">Show Diagnostics</button>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="card kpi" id="avgCard">
+        <h3>Average Multiplier</h3>
+        <div class="metric" id="avgVal">—</div>
+        <div class="stat-row">
+          <span class="sub" id="countText">0 rounds</span>
+          <span class="badge"><span aria-hidden="true">📈</span><span id="avgTrend">—</span></span>
+        </div>
+      </div>
+
+      <div class="card kpi" id="outlierCard">
+        <h3>Average Outlier Multipliers</h3>
+        <div class="metric" id="outlierVal">—</div>
+        <div class="stat-row">
+          <span class="sub" id="outlierCount">0 outliers</span>
+          <span class="badge"><span aria-hidden="true">🎯</span><span id="outlierThreshText">≥ 2.00</span></span>
+        </div>
+      </div>
+
+      <div class="card kpi" id="successCard">
+        <h3>Success Rate</h3>
+        <div class="metric" id="successVal">—</div>
+        <div class="stat-row">
+          <span class="sub">Target ≥ <b id="targetEcho">3.00</b></span>
+          <span class="badge"><span aria-hidden="true">✅</span><span id="successCount">0 / 0</span></span>
+        </div>
+      </div>
+
+      <div class="card scanner">
+        <h3>Advanced Pattern Scanner</h3>
+        <div class="hint">Add conditions inline, then set a target for the current round (also used by the Success Rate KPI) and scan.</div>
+        <div class="conditions" id="conditions">
+          <div class="panel" id="conditions-left">
+            <h4>Conditions</h4>
+            <div id="conditionsList"></div>
+            <div class="row">
+              <button class="btn" id="addCond">+ Add Condition</button>
+              <button class="btn secondary" id="clearCond">Clear</button>
+            </div>
+          </div>
+          <div class="panel" id="conditions-right">
+            <h4>Run Settings</h4>
+            <div class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap">
+              <label>
+                <span class="sub">Deposit</span><br>
+                <input type="number" id="depositInput" placeholder="e.g., 1000" />
+              </label>
+              <label>
+                <span class="sub">From</span><br>
+                <input type="datetime-local" id="fromDate" />
+              </label>
+              <label>
+                <span class="sub">To</span><br>
+                <input type="datetime-local" id="toDate" />
+              </label>
+              <label style="flex:1 1 220px">
+                <span class="sub">Martingale sequence</span><br>
+                <input type="text" id="martingaleInput" placeholder="1, 2, 4, 6, 9" />
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="sep" style="flex-basis:100%"></div>
+          <label>
+            <span class="sub">Pattern target for current round (≥)</span><br>
+            <input type="number" id="patternTarget" step="0.01" value="3" />
+          </label>
+          <button class="btn" id="scanBtn">Scan Pattern</button>
+        </div>
+        <div class="results" id="scanResults" hidden>
+          <div class="tabs">
+            <button class="tab-btn" id="tabBtnOverview">Overview</button>
+            <button class="tab-btn active" id="tabBtnOcc">Occurance</button>
+          </div>
+          <div class="tab-panel" id="tabOverview">
+            <div class="hint">Overview coming next — share what you’d like to see here and I’ll wire it up.</div>
+          </div>
+          <div class="tab-panel active" id="tabOccurance">
+            <div class="legend">
+              <span class="pill"><b id="occCount">0</b> occurrences</span>
+              <span class="pill"><b id="succCount">0</b> wins</span>
+              <span class="pill">Rate: <b id="succRate">0%</b></span>
+            </div>
+            <div class="list" id="hitList"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card tests" id="diagnosticsCard" hidden>
+        <h3>Diagnostics / Tests</h3>
+        <div class="hint">Auto-runs basic checks to validate scanner logic and KPIs.</div>
+        <div class="tests-list" id="tests"></div>
+      </div>
+    </section>
+
+    <div class="footer">Tip: The timeframe filter uses timestamps relative to "now" so you can test This Week / This Month immediately with the demo data.</div>
+  </div>
+
+  <script>
+  // Ensure the DOM is fully loaded before running any JS that queries elements or attaches listeners
+  document.addEventListener('DOMContentLoaded', function(){
+    // ---------------------------------------------
+    // Demo Data
+    // ---------------------------------------------
+    const now = new Date();
+    const hoursAgo = (h)=> new Date(now.getTime() - h*3600*1000);
+
+    // Lottostar multipliers from the prompt (preserving order).
+    const lottoMultipliers = [1, 7.71, 1.53, 6, 1, 1.07, 5.42, 1.2, 3.78, 1.42, 1.27, 1.45, 6.52, 1.35, 3.31, 1.57, 6.9, 2.18, 10.75];
+    // Betway: synthetic but plausible.
+    const betwayMultipliers = [1.1, 2.6, 1.3, 3.9, 1.0, 1.8, 5.2, 1.4, 2.1, 7.8, 1.2, 1.9, 3.2, 1.5, 4.6, 1.1, 2.4, 6.3, 1.3, 2.9, 10.2];
+
+    function buildSeries(arr, gapHours=3){
+      return arr.map((m, i)=>({ ts: hoursAgo((arr.length-1-i)*gapHours), m }));
+    }
+
+    const DATA = {
+      Lottostar: buildSeries(lottoMultipliers, 6), // 6h gaps
+      Betway:    buildSeries(betwayMultipliers, 4) // 4h gaps
+    };
+
+    // ---------------------------------------------
+    // Utilities
+    // ---------------------------------------------
+    const fmt = (n, d=2)=> Number.isFinite(n) ? n.toFixed(d) : '—';
+    const pct = (n)=> Number.isFinite(n) ? (n*100).toFixed(1)+"%" : '—';
+
+    // Fixed outlier threshold used by KPI (was previously user-configurable)
+    const OUTLIER_THRESHOLD = 2;
+
+    function inThisWeek(date){
+      // ISO week comparison (Mon start)
+      const d = new Date(date);
+      const today = new Date();
+      const getWeek = (x)=>{
+        const tmp = new Date(x.getTime());
+        tmp.setHours(0,0,0,0);
+        tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay()+6)%7));
+        const week1 = new Date(tmp.getFullYear(),0,4);
+        return 1 + Math.round(((tmp.getTime()-week1.getTime())/86400000 - 3 + ((week1.getDay()+6)%7))/7);
+      };
+      return d.getFullYear()===today.getFullYear() && getWeek(d)===getWeek(today);
+    }
+
+    function inThisMonth(date){
+      const d=new Date(date), t=new Date();
+      return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth();
+    }
+
+    function inThisHour(date){
+      const d = new Date(date);
+      const diff = Date.now() - d.getTime();
+      return diff >= 0 && diff < 3600*1000; // within last 60 minutes
+    }
+
+    function isToday(date){
+      const d = new Date(date);
+      const t = new Date();
+      return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth() && d.getDate()===t.getDate();
+    }
+
+    function filterByTimeframe(series, tf){
+      if(tf==='hour')  return series.filter(r=> inThisHour(r.ts));
+      if(tf==='today') return series.filter(r=> isToday(r.ts));
+      if(tf==='week')  return series.filter(r=> inThisWeek(r.ts));
+      if(tf==='month') return series.filter(r=> inThisMonth(r.ts));
+      return series;
+    }
+
+    function computeStats(series, target=3, outlierThr=2){
+      const vals = series.map(r=> r.m);
+      const n = vals.length;
+      if(!n) return {avg:null, count:0, outAvg:null, outCount:0, success:null, succCount:0};
+      const avg = vals.reduce((a,b)=>a+b,0)/n;
+      const outs = vals.filter(v=> v>=outlierThr);
+      const outAvg = outs.length? outs.reduce((a,b)=>a+b,0)/outs.length : null;
+      const succ = vals.filter(v=> v>=target).length;
+      return {avg, count:n, outAvg, outCount:outs.length, success: succ/n, succCount:succ};
+    }
+
+    // Pattern scanner
+    const OPS = {
+      '>':  (a,b)=> a> b,
+      '>=': (a,b)=> a>=b,
+      '<':  (a,b)=> a< b,
+      '<=': (a,b)=> a<=b,
+      '==': (a,b)=> a==b,
+      '!=': (a,b)=> a!=b
+    };
+
+    function scanPattern(series, conditions, target){
+      const vals = series.map(r=> r.m);
+      const maxOffset = Math.max(0, ...conditions.map(c=> c.offset||0));
+      const hits = [];
+      for(let i=maxOffset; i<vals.length; i++){
+        const ok = conditions.every(c=>{
+          const prev = vals[i - c.offset];
+          const fn = OPS[c.op];
+          return fn ? fn(prev, c.value) : false;
+        });
+        if(ok){
+          const window = conditions.slice().sort((a,b)=>b.offset-a.offset).map(c=> vals[i-c.offset]);
+          const cur = vals[i];
+          const success = cur >= target; // success definition (≥)
+          hits.push({index:i, window, current:cur, success});
+        }
+      }
+      const succCount = hits.filter(h=> h.success).length;
+      const rate = hits.length? succCount / hits.length : 0;
+      return {hits, succCount, occurrences:hits.length, rate};
+    }
+
+    // ---------------------------------------------
+    // UI Wiring
+    // ---------------------------------------------
+    const els = {
+      platform: document.getElementById('platformSelect'),
+      timeframe: document.getElementById('timeframeSelect'),
+      avgVal: document.getElementById('avgVal'),
+      avgTrend: document.getElementById('avgTrend'),
+      countText: document.getElementById('countText'),
+      outVal: document.getElementById('outlierVal'),
+      outCount: document.getElementById('outlierCount'),
+      outThreshText: document.getElementById('outlierThreshText'),
+      successVal: document.getElementById('successVal'),
+      successCount: document.getElementById('successCount'),
+      targetEcho: document.getElementById('targetEcho'),
+      // Scanner
+      conditionsList: document.getElementById('conditionsList'),
+      addCond: document.getElementById('addCond'),
+      clearCond: document.getElementById('clearCond'),
+      patternTarget: document.getElementById('patternTarget'),
+      scanBtn: document.getElementById('scanBtn'),
+      scanResults: document.getElementById('scanResults'),
+      // Tabs
+      tabBtnOverview: document.getElementById('tabBtnOverview'),
+      tabBtnOcc: document.getElementById('tabBtnOcc'),
+      tabOverview: document.getElementById('tabOverview'),
+      tabOccurance: document.getElementById('tabOccurance'),
+      occCount: document.getElementById('occCount'),
+      succCount: document.getElementById('succCount'),
+      succRate: document.getElementById('succRate'),
+      hitList: document.getElementById('hitList'),
+      // Diagnostics
+      tests: document.getElementById('tests'),
+      toggleDiagBtn: document.getElementById('toggleDiagBtn'),
+      diagCard: document.getElementById('diagnosticsCard')
+    };
+
+    function currentSeries(){
+      const platform = els.platform.value;
+      const tf = els.timeframe.value;
+      return filterByTimeframe(DATA[platform]||[], tf);
+    }
+
+    function refreshKPIs(){
+      const ser = currentSeries();
+      const target = parseFloat(els.patternTarget.value)||3;
+      const outThr = OUTLIER_THRESHOLD;
+
+      // Base KPIs (not pattern-based)
+      const {avg, count, outAvg, outCount} = computeStats(ser, target, outThr);
+      els.avgVal.textContent = fmt(avg);
+      els.countText.textContent = `${count} rounds`;
+      els.avgTrend.textContent = count? `Last: ${fmt(ser[ser.length-1].m)}` : '—';
+
+      els.outVal.textContent = outAvg==null? '—' : fmt(outAvg);
+      els.outCount.textContent = `${outCount} outliers`;
+      els.outThreshText.textContent = `≥ ${fmt(outThr)}`;
+
+      // Success KPI should be pattern-based: wins over occurrences
+      const conds = readConditions();
+      const pattern = scanPattern(ser, conds, target);
+      els.successVal.textContent = pattern.occurrences ? pct(pattern.rate) : '—';
+      els.successCount.textContent = `${pattern.succCount} / ${pattern.occurrences}`;
+      els.targetEcho.textContent = fmt(target);
+    }
+
+    // ----- Scanner condition rows -----
+    function addConditionRow(offset=1, op='>', value=1.6){
+      const row = document.createElement('div');
+      row.className = 'cond-row';
+      row.innerHTML = `
+        <span class="sub" aria-hidden="true">prev</span>
+        <input type="number" min="1" step="1" value="${offset}" class="cond-offset" aria-label="Prev rounds offset" placeholder="1" />
+        <select class="cond-op" aria-label="Operator">
+          <option value=">">&gt;</option>
+          <option value=">=">&gt;=</option>
+          <option value="<">&lt;</option>
+          <option value="<=">&lt;=</option>
+          <option value="==">==</option>
+          <option value="!=">!=</option>
+        </select>
+        <input type="number" step="0.01" value="${value}" class="cond-value" aria-label="Threshold value" placeholder="(e.g., prev 1 > 1.6)" />
+        <button class="btn secondary" title="Remove">✕</button>
+      `;
+      row.querySelector('.cond-op').value = op;
+      row.querySelector('button').addEventListener('click', ()=>{ row.remove(); });
+      els.conditionsList.appendChild(row);
+    }
+
+    function readConditions(){
+      const rows = [...els.conditionsList.querySelectorAll('.cond-row')];
+      return rows.map(r=>({
+        offset: Math.max(1, parseInt(r.querySelector('.cond-offset').value||'1',10)),
+        op: r.querySelector('.cond-op').value,
+        value: parseFloat(r.querySelector('.cond-value').value||'0')
+      }));
+    }
+
+    function runScan(){
+      const ser = currentSeries();
+      const conditions = readConditions();
+      const target = parseFloat(els.patternTarget.value)||3;
+      const res = scanPattern(ser, conditions, target);
+      els.scanResults.hidden = false;
+      // Switch to Occurance tab by default on scan
+      activateTab('occ');
+      els.occCount.textContent = res.occurrences;
+      els.succCount.textContent = res.succCount;
+      els.succRate.textContent = (res.rate*100).toFixed(1)+"%";
+      els.hitList.innerHTML = '';
+      res.hits.forEach(h=>{
+        const item = document.createElement('div');
+        item.className = 'hit';
+        const left = document.createElement('div');
+        left.className = 'mut-seq';
+        const b = document.createElement('b');
+        b.textContent = '#'+h.index;
+        left.appendChild(b);
+        left.appendChild(document.createTextNode(' → '+[...h.window, h.current].map(v=> Number(v).toFixed(2)).join(', ')));
+        const right = document.createElement('div');
+        right.className = h.success? 'ok' : 'fail';
+        right.textContent = h.success? '✔ Won' : '✖ Lost';
+        item.appendChild(left);
+        item.appendChild(right);
+        els.hitList.appendChild(item);
+      });
+    }
+
+    // Tabs
+    function activateTab(which){
+      const isOverview = which === 'ov';
+      els.tabBtnOverview.classList.toggle('active', isOverview);
+      els.tabBtnOcc.classList.toggle('active', !isOverview);
+      els.tabOverview.classList.toggle('active', isOverview);
+      els.tabOccurance.classList.toggle('active', !isOverview);
+    }
+    els.tabBtnOverview.addEventListener('click', ()=> activateTab('ov'));
+    els.tabBtnOcc.addEventListener('click', ()=> activateTab('occ'));
+
+    // Events
+    els.platform.addEventListener('change', ()=>{ refreshKPIs(); els.scanResults.hidden=true; });
+    els.timeframe.addEventListener('change', ()=>{ refreshKPIs(); els.scanResults.hidden=true; });
+    els.patternTarget.addEventListener('input', refreshKPIs);
+    els.addCond.addEventListener('click', ()=> addConditionRow());
+    els.clearCond.addEventListener('click', ()=>{ els.conditionsList.innerHTML=''; els.scanResults.hidden=true; });
+    els.scanBtn.addEventListener('click', ()=>{ runScan(); refreshKPIs(); });
+    els.toggleDiagBtn.addEventListener('click', ()=>{
+      const nowHidden = !els.diagCard.hidden;
+      els.diagCard.hidden = nowHidden;
+      els.toggleDiagBtn.textContent = nowHidden ? 'Show Diagnostics' : 'Hide Diagnostics';
+      els.toggleDiagBtn.setAttribute('aria-expanded', String(!nowHidden));
+    });
+
+    // ---------------------------------------------
+    // Tests / Diagnostics
+    // ---------------------------------------------
+    function addTestResult(ok, label, details){
+      const div = document.createElement('div');
+      div.className = 'test ' + (ok? 'pass':'fail');
+      const b = document.createElement('b');
+      b.textContent = (ok? 'PASS':'FAIL') + ': ';
+      const lbl = document.createElement('span');
+      lbl.textContent = label;
+      div.appendChild(b);
+      div.appendChild(lbl);
+      if(details){
+        div.appendChild(document.createTextNode(' — '));
+        const small = document.createElement('span');
+        small.className = 'sub';
+        small.textContent = details;
+        div.appendChild(small);
+      }
+      els.tests.appendChild(div);
+    }
+
+    function runTests(){
+      els.tests.innerHTML = '';
+
+      // Test 1: Lottostar example — prev1>1.6 & prev2>1.6, target 3
+      const ser = DATA.Lottostar; // full series
+      const conditions = [{offset:1, op:'>', value:1.6},{offset:2, op:'>', value:1.6}];
+      const tRes = scanPattern(ser, conditions, 3);
+      addTestResult(tRes.occurrences===5, 'Occurrences should be 5', `got ${tRes.occurrences}`);
+      addTestResult(tRes.succCount===3, 'Success count should be 3', `got ${tRes.succCount}`);
+      addTestResult(Math.abs(tRes.rate - 0.6) < 1e-9, 'Success rate should be 60%', `got ${(tRes.rate*100).toFixed(1)}%`);
+
+      // Test 2: computeStats basic sanity
+      const stats = computeStats(ser, 3, 2);
+      addTestResult(stats.count===ser.length, 'Count equals series length', `count=${stats.count}`);
+      addTestResult(stats.succCount<=stats.count, 'Success count ≤ total');
+
+      // Test 3: timeframe filters produce non-empty subsets
+      const hourCt  = filterByTimeframe(ser,'hour').length;
+      const todayCt = filterByTimeframe(ser,'today').length;
+      const weekCt  = filterByTimeframe(ser,'week').length;
+      const monthCt = filterByTimeframe(ser,'month').length;
+      addTestResult(hourCt>=1, 'This Hour includes the most recent round', `len=${hourCt}`);
+      addTestResult(hourCt<=todayCt, 'This Hour ≤ Today', `hour=${hourCt}, today=${todayCt}`);
+      addTestResult(todayCt<=weekCt, 'Today ≤ This Week', `today=${todayCt}, week=${weekCt}`);
+      addTestResult(monthCt>=weekCt, 'This Month ≥ This Week (usually)', `week=${weekCt}, month=${monthCt}`);
+
+      // Test 4: KPI Success Rate follows scanner target (patternTarget) and occurrences
+      const prevTarget = els.patternTarget.value;
+      els.patternTarget.value = '4';
+      refreshKPIs();
+      const res4 = scanPattern(ser, conditions, 4);
+      const domPct = parseFloat(els.successVal.textContent); // strip %
+      const expPct = (res4.rate||0)*100;
+      addTestResult(Math.abs(domPct - expPct) < 0.1, 'KPI uses scanner target (4) & pattern rate', `dom=${domPct.toFixed(1)}%, exp=${expPct.toFixed(1)}%`);
+
+      // Test 5: KPI badge shows success / occurrences for current conditions
+      els.patternTarget.value = '3';
+      refreshKPIs();
+      const res3 = scanPattern(ser, conditions, 3);
+      const parts = els.successCount.textContent.split('/');
+      const domSucc = parseInt(parts[0]);
+      const domOcc = parseInt(parts[1]);
+      addTestResult(domSucc===res3.succCount && domOcc===res3.occurrences, 'KPI badge matches success/occurrences', `dom=${domSucc}/${domOcc}, exp=${res3.succCount}/${res3.occurrences}`);
+
+      // Test 6: No-conditions scan should consider all rounds as occurrences
+      const resNoCond = scanPattern(ser, [], 3);
+      addTestResult(resNoCond.occurrences===ser.length, 'No-conditions occurrences == series length', `occ=${resNoCond.occurrences}, len=${ser.length}`);
+
+      // Test 7: Impossible condition yields zero occurrences
+      const resImpossible = scanPattern(ser, [{offset:1, op:'>', value:9999}], 3);
+      addTestResult(resImpossible.occurrences===0, 'Impossible condition → 0 occurrences');
+
+      // Test 8: Diagnostics toggle button hides/shows the card and updates label
+      const wasHidden = els.diagCard.hidden;
+      els.toggleDiagBtn.click();
+      const afterHidden = els.diagCard.hidden;
+      const afterLabel = els.toggleDiagBtn.textContent;
+      addTestResult(afterHidden !== wasHidden && ((afterHidden && afterLabel.includes('Show')) || (!afterHidden && afterLabel.includes('Hide'))), 'Diagnostics toggle works', `hidden:${wasHidden}→${afterHidden}, label:"${afterLabel}"`);
+      // restore
+      els.toggleDiagBtn.click();
+
+      // Test 9: Timeframe option order
+      const tfValues = Array.from(els.timeframe.options).map(o=>o.value).slice(0,5).join(',');
+      addTestResult(tfValues==='all,hour,today,week,month', 'Timeframe options order is correct', tfValues);
+
+      // restore
+      els.patternTarget.value = prevTarget;
+      refreshKPIs();
+    }
+
+    // Boot
+    addConditionRow(1,'>',1.6);
+    addConditionRow(2,'>',1.6);
+    refreshKPIs();
+    runTests();
+  });
+  </script>
+</body>
+</html>

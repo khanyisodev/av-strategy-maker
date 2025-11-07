@@ -33,6 +33,7 @@ if (!defined('ABSPATH')) {
           <select id="window" class="bg-slate-800/80 border border-slate-700 rounded-lg px-3 py-2 text-sm">
             <option value="60">Last 60 pts</option>
             <option value="120" selected>Last 120 pts</option>
+            <option value="240">Last 240 pts</option>
             <option value="all">All</option>
           </select>
         </div>

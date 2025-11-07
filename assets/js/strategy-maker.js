@@ -482,11 +482,12 @@ function init() {
         if (state.speed) speedEl.value = state.speed;
         if (state.window && windowEl) {
           const options = Array.from(windowEl.options || []);
+          const optionValues = options.map(opt => opt.value);
           const fallback = maxPointsDefault.toString();
           let selected;
-          if (options.some(opt => opt.value === state.window)) {
+          if (optionValues.includes(state.window)) {
             selected = state.window;
-          } else if (['240', '250'].includes(state.window)) {
+          } else if (state.window === '250') {
             selected = 'all';
           } else {
             selected = fallback;

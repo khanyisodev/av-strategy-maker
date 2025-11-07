@@ -390,6 +390,15 @@ function init() {
       if (strategy.debug.selectedRound !== null && !Number.isInteger(strategy.debug.selectedRound)) {
         strategy.debug.selectedRound = null;
       }
+      if (typeof strategy.debug.feedbackMessage !== 'string') {
+        strategy.debug.feedbackMessage = '';
+      }
+      if (!['success', 'error'].includes(strategy.debug.feedbackTone)) {
+        strategy.debug.feedbackTone = 'success';
+      }
+      if (!('feedbackTimeoutId' in strategy.debug)) {
+        strategy.debug.feedbackTimeoutId = null;
+      }
     }
 
     function pushDebugRound(strategy, entry) {
@@ -509,6 +518,9 @@ function init() {
         const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
         const summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;
         const rounds = strategy.debug.rounds;
+        const feedbackMessage = strategy.debug.feedbackMessage;
+        const feedbackTone = strategy.debug.feedbackTone === 'error' ? 'text-rose-400' : 'text-emerald-400';
+        const feedbackMarkup = feedbackMessage ? `<div class="text-[11px] ${feedbackTone}">${feedbackMessage}</div>` : '';
         const roundsMarkup = rounds.length
           ? rounds.map((round, rIdx) => {
               const isSelected = strategy.debug.selectedRound === rIdx;
@@ -540,16 +552,151 @@ function init() {
           : '<p class="text-xs text-slate-500">No rounds processed yet. Start the simulation to populate this log.</p>';
 
         return `<div class="border border-slate-700 rounded-lg overflow-hidden" data-debug-card="${index}">
-          <button type="button" data-debug-toggle="${index}" class="w-full flex items-center justify-between px-4 py-3 bg-slate-900/60 hover:bg-slate-900">
-            <span class="text-sm font-semibold text-slate-100 flex items-center gap-2"><span class="inline-flex size-2.5 rounded-full" style="background:${strategy.color};"></span>${label}</span>
-            <span class="text-xs text-slate-400">${rounds.length} rounds</span>
-          </button>
+          <div class="flex items-center justify-between px-4 py-3 bg-slate-900/60 gap-3">
+            <button type="button" data-debug-toggle="${index}" class="flex-1 flex items-center justify-between gap-3 text-left hover:text-slate-100">
+              <span class="text-sm font-semibold text-slate-100 flex items-center gap-2"><span class="inline-flex size-2.5 rounded-full" style="background:${strategy.color};"></span>${label}</span>
+              <span class="text-xs text-slate-400">${rounds.length} rounds</span>
+            </button>
+            <button type="button" data-debug-copy="${index}" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded border border-slate-600 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 transition-colors duration-150">Copy log</button>
+          </div>
           <div class="px-4 py-3 space-y-2 ${strategy.debug.expanded ? '' : 'hidden'}" data-debug-body="${index}">
+            ${feedbackMarkup}
             <div class="text-xs text-slate-400">${summary}</div>
             <div class="space-y-2">${roundsMarkup}</div>
           </div>
         </div>`;
       }).join('');
+    }
+
+    function triggerToLines(trigger, index) {
+      if (!trigger || !Array.isArray(trigger.conditions) || !trigger.conditions.length) {
+        return [`  Trigger ${index + 1}: (no conditions defined)`];
+      }
+      const header = `  Trigger ${index + 1}:`;
+      const lines = trigger.conditions.map(cond => {
+        const position = Number.isFinite(cond.pos) ? cond.pos : 1;
+        const operator = cond.op || '>';
+        const value = Number.isFinite(cond.value) ? cond.value : 0;
+        return `    - Prev Mult ${position} ${operator} ${formatAmount(value)}`;
+      });
+      return [header, ...lines];
+    }
+
+    function buildDebugExport(strategy, index) {
+      ensureStrategyTriggers(strategy);
+      ensureStrategyDebug(strategy);
+      const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
+      const lines = [];
+      lines.push(`Strategy ${index + 1}: ${label}`);
+      lines.push(`Color: ${strategy.color || 'N/A'}`);
+      const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
+      lines.push(`Cashout target: ${cashoutLabel || 'N/A'}`);
+      lines.push(`Base bet amount: ${formatAmount(strategy.betAmount)}`);
+
+      const sequence = Array.isArray(strategy.sequence)
+        ? strategy.sequence.map(val => parseFloat(val)).filter(num => Number.isFinite(num))
+        : [];
+      if (strategy.martingale) {
+        if (sequence.length) {
+          lines.push(`Martingale: Enabled (sequence: ${sequence.map(num => formatAmount(num)).join(', ')})`);
+        } else {
+          lines.push('Martingale: Enabled (no sequence provided)');
+        }
+      } else {
+        lines.push('Martingale: Disabled');
+      }
+
+      const risk = strategy.risk || {};
+      if (risk.enabled) {
+        const rounds = Number.isFinite(risk.rounds) ? risk.rounds : 0;
+        const resumeAbove = Number.isFinite(risk.resumeAbove) ? risk.resumeAbove : 0;
+        const resumeRule = risk.restart === 'start' ? 'restart sequence on resume' : 'continue sequence on resume';
+        lines.push(`Risk controls: Enabled — stop after ${rounds} losses, resume after ${resumeAbove} hits ≥ cashout, ${resumeRule}`);
+      } else {
+        lines.push('Risk controls: Disabled');
+      }
+
+      const second = strategy.second || {};
+      if (second.enabled) {
+        const lockRounds = Number.isFinite(second.lockRounds) ? second.lockRounds : 0;
+        const restartLabel = second.restart === 'lock'
+          ? `lock for ${lockRounds} rounds after wins`
+          : 'restart after wins';
+        lines.push(`Second bet: Enabled — amount ${formatAmount(second.amount)} (${restartLabel})`);
+      } else {
+        lines.push('Second bet: Disabled');
+      }
+
+      lines.push('');
+      lines.push('Triggers:');
+      if (Array.isArray(strategy.triggers) && strategy.triggers.length) {
+        strategy.triggers.forEach((trigger, tIndex) => {
+          triggerToLines(trigger, tIndex).forEach(line => lines.push(line));
+        });
+      } else {
+        lines.push('  (no triggers configured)');
+      }
+
+      lines.push('');
+      lines.push('Rounds:');
+      const rounds = Array.isArray(strategy.debug.rounds) ? strategy.debug.rounds : [];
+      if (!rounds.length) {
+        lines.push('  No rounds logged yet. Start the simulation to collect results.');
+      } else {
+        rounds.forEach(round => {
+          const parts = [];
+          const roundIndex = Number.isFinite(round.round) ? round.round : '?';
+          const multiplierLabel = Number.isFinite(round.multiplier) ? formatMultiplierLabel(round.multiplier) : '';
+          parts.push(`Round ${roundIndex}`);
+          parts.push(`Multiplier ${multiplierLabel || 'N/A'}`);
+          parts.push(`Decision: ${round.decision || 'Skip'}`);
+          parts.push(`Outcome: ${round.outcome || 'No bet'}`);
+          if (round.bet > 0) {
+            parts.push(`Bet: ${formatAmount(round.bet)}`);
+          }
+          if (Number.isFinite(round.bankrollBefore)) {
+            parts.push(`Bankroll before: ${formatAmount(round.bankrollBefore)}`);
+          }
+          if (Number.isFinite(round.bankrollAfter)) {
+            parts.push(`Bankroll after: ${formatAmount(round.bankrollAfter)}`);
+          }
+          if (Number.isFinite(round.bankrollBefore) && Number.isFinite(round.bankrollAfter)) {
+            const delta = round.bankrollAfter - round.bankrollBefore;
+            const sign = delta > 0 ? '+' : delta < 0 ? '-' : '±';
+            parts.push(`Δ ${sign}${formatAmount(Math.abs(delta))}`);
+          }
+          lines.push(`  ${parts.join(' — ')}`);
+        });
+      }
+
+      return lines.join('\n');
+    }
+
+    function copyToClipboard(text) {
+      if (navigator?.clipboard?.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
+      return new Promise((resolve, reject) => {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        try {
+          textarea.select();
+          const successful = document.execCommand('copy');
+          document.body.removeChild(textarea);
+          if (successful) {
+            resolve();
+          } else {
+            reject(new Error('Copy command unsuccessful'));
+          }
+        } catch (err) {
+          document.body.removeChild(textarea);
+          reject(err);
+        }
+      });
     }
 
     function renderStrategies() {
@@ -1049,6 +1196,42 @@ function init() {
 
     if (debugWrap) {
       debugWrap.addEventListener('click', (event) => {
+        const copyBtn = event.target.closest('[data-debug-copy]');
+        if (copyBtn) {
+          const idx = parseInt(copyBtn.dataset.debugCopy, 10);
+          if (Number.isInteger(idx) && strategies[idx]) {
+            const strategy = strategies[idx];
+            ensureStrategyDebug(strategy);
+            const exportText = buildDebugExport(strategy, idx);
+            copyToClipboard(exportText).then(() => {
+              strategy.debug.feedbackMessage = 'Copied strategy debug to the clipboard.';
+              strategy.debug.feedbackTone = 'success';
+              renderDebugPanel();
+              if (strategy.debug.feedbackTimeoutId) {
+                clearTimeout(strategy.debug.feedbackTimeoutId);
+              }
+              strategy.debug.feedbackTimeoutId = setTimeout(() => {
+                strategy.debug.feedbackMessage = '';
+                renderDebugPanel();
+                strategy.debug.feedbackTimeoutId = null;
+              }, 2500);
+            }).catch(() => {
+              strategy.debug.feedbackMessage = 'Copy failed. Please try again or copy manually.';
+              strategy.debug.feedbackTone = 'error';
+              renderDebugPanel();
+              if (strategy.debug.feedbackTimeoutId) {
+                clearTimeout(strategy.debug.feedbackTimeoutId);
+              }
+              strategy.debug.feedbackTimeoutId = setTimeout(() => {
+                strategy.debug.feedbackMessage = '';
+                renderDebugPanel();
+                strategy.debug.feedbackTimeoutId = null;
+              }, 4000);
+            });
+          }
+          return;
+        }
+
         const toggle = event.target.closest('[data-debug-toggle]');
         if (toggle) {
           const idx = parseInt(toggle.dataset.debugToggle, 10);

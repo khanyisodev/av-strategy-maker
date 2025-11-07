@@ -89,6 +89,7 @@ if (!defined('ABSPATH')) {
       <div class="flex items-center gap-2 border-b border-slate-700 pb-3 mb-4" role="tablist" aria-label="Settings tabs">
         <button type="button" data-tab="strategies" class="settings-tab px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-150" aria-selected="true">Strategies</button>
         <button type="button" data-tab="multipliers" class="settings-tab px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-150 text-slate-400" aria-selected="false">Multipliers</button>
+        <button type="button" data-tab="debug" class="settings-tab px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-150 text-slate-400" aria-selected="false">Debug</button>
       </div>
       <section id="tabStrategies" data-tab-panel="strategies" class="space-y-4">
         <div id="strategiesWrap" class="space-y-4"></div>
@@ -104,6 +105,10 @@ if (!defined('ABSPATH')) {
         </div>
         <div class="mt-4 text-xs text-slate-400">Active multipliers: <span id="multipliersCount">0</span></div>
         <div id="multipliersPreview" class="mt-2 flex flex-wrap gap-2"></div>
+      </section>
+      <section id="tabDebug" data-tab-panel="debug" class="hidden">
+        <p class="text-sm text-slate-300">Monitor the live decisions for each strategy. Click a strategy header to reveal its rounds, then click any round to highlight it.</p>
+        <div id="debugWrap" class="mt-3 space-y-3"></div>
       </section>
     </div>
   </div>

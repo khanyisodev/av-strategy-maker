@@ -30,6 +30,9 @@ function init() {
       }
     };
     const formatMult = (x) => x.toFixed(2);
+    const formatAmount = (value) => Number.isFinite(value)
+      ? value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '0.00';
 
     function hexToRgba(hex, alpha = 1) {
       let h = hex.replace('#', '');
@@ -338,6 +341,7 @@ function init() {
     const multipliersFeedback = document.getElementById('multipliersFeedback');
     const multipliersCount = document.getElementById('multipliersCount');
     const multipliersPreview = document.getElementById('multipliersPreview');
+    const debugWrap = document.getElementById('debugWrap');
     const tabButtons = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab]') : []);
     const tabPanels = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab-panel]') : []);
 
@@ -364,8 +368,43 @@ function init() {
         resumeHits: 0,
         data: Array.from({ length: maxPoints }, () => INITIAL_BANKROLL),
         color,
-        collapsed: false
+        collapsed: false,
+        debug: {
+          rounds: [],
+          expanded: true,
+          selectedRound: null
+        }
       };
+    }
+
+    function ensureStrategyDebug(strategy) {
+      if (!strategy.debug || typeof strategy.debug !== 'object') {
+        strategy.debug = { rounds: [], expanded: true, selectedRound: null };
+      }
+      if (!Array.isArray(strategy.debug.rounds)) {
+        strategy.debug.rounds = [];
+      }
+      if (typeof strategy.debug.expanded !== 'boolean') {
+        strategy.debug.expanded = true;
+      }
+      if (strategy.debug.selectedRound !== null && !Number.isInteger(strategy.debug.selectedRound)) {
+        strategy.debug.selectedRound = null;
+      }
+    }
+
+    function pushDebugRound(strategy, entry) {
+      ensureStrategyDebug(strategy);
+      strategy.debug.rounds.push(entry);
+      if (strategy.debug.rounds.length > 500) {
+        strategy.debug.rounds.shift();
+        if (strategy.debug.selectedRound !== null) {
+          if (strategy.debug.selectedRound === 0) {
+            strategy.debug.selectedRound = null;
+          } else {
+            strategy.debug.selectedRound = Math.min(strategy.debug.rounds.length - 1, strategy.debug.selectedRound - 1);
+          }
+        }
+      }
     }
 
     function saveState() {
@@ -428,6 +467,10 @@ function init() {
             base.resumeHits = 0;
             base.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
             base.triggers = normalizeTriggers(saved);
+            ensureStrategyDebug(base);
+            base.debug.rounds = [];
+            base.debug.selectedRound = null;
+            base.debug.expanded = true;
             delete base.conditions;
             strategies.push(base);
           });
@@ -454,9 +497,65 @@ function init() {
       });
     }
 
+    function renderDebugPanel() {
+      if (!debugWrap) return;
+      if (!strategies.length) {
+        debugWrap.innerHTML = '<p class="text-xs text-slate-500">Create a strategy to see its simulation log here.</p>';
+        return;
+      }
+
+      debugWrap.innerHTML = strategies.map((strategy, index) => {
+        ensureStrategyDebug(strategy);
+        const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
+        const summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;
+        const rounds = strategy.debug.rounds;
+        const roundsMarkup = rounds.length
+          ? rounds.map((round, rIdx) => {
+              const isSelected = strategy.debug.selectedRound === rIdx;
+              const classes = [
+                'w-full text-left px-3 py-2 rounded-lg border transition-colors duration-150',
+                isSelected ? 'border-indigo-500 bg-indigo-500/10 text-slate-100' : 'border-slate-700 bg-slate-900/40 text-slate-200 hover:border-slate-500'
+              ].join(' ');
+              const betLine = round.bet > 0 ? ` • Bet: ${formatAmount(round.bet)}` : '';
+              const decision = round.decision || 'Skip';
+              const outcome = round.outcome || 'No bet';
+              const bankrollLine = Number.isFinite(round.bankrollAfter) ? `Bankroll: ${formatAmount(round.bankrollAfter)}` : '';
+              const hasDelta = Number.isFinite(round.bankrollAfter) && Number.isFinite(round.bankrollBefore);
+              const deltaRaw = hasDelta ? round.bankrollAfter - round.bankrollBefore : null;
+              const deltaClass = deltaRaw && deltaRaw !== 0 ? (deltaRaw > 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400';
+              const deltaPrefix = deltaRaw && deltaRaw !== 0 ? (deltaRaw > 0 ? '+' : '−') : '±';
+              const deltaLabel = hasDelta ? `${deltaPrefix}${formatAmount(Math.abs(deltaRaw || 0))}` : '';
+              return `<button type="button" class="${classes}" data-debug-round="${rIdx}" data-debug-strategy="${index}">
+                <div class="flex items-center justify-between text-xs font-semibold">
+                  <span>Round ${round.round}</span>
+                  <span>${formatMultiplierLabel(round.multiplier)}</span>
+                </div>
+                <div class="mt-1 text-[11px] text-slate-300">Decision: ${decision} • Outcome: ${outcome}${betLine}</div>
+                <div class="mt-1 text-[11px] text-slate-400 flex flex-wrap items-center gap-2">
+                  ${bankrollLine}
+                  ${deltaLabel ? `<span class="${deltaClass}">Δ ${deltaLabel}</span>` : ''}
+                </div>
+              </button>`;
+            }).join('')
+          : '<p class="text-xs text-slate-500">No rounds processed yet. Start the simulation to populate this log.</p>';
+
+        return `<div class="border border-slate-700 rounded-lg overflow-hidden" data-debug-card="${index}">
+          <button type="button" data-debug-toggle="${index}" class="w-full flex items-center justify-between px-4 py-3 bg-slate-900/60 hover:bg-slate-900">
+            <span class="text-sm font-semibold text-slate-100 flex items-center gap-2"><span class="inline-flex size-2.5 rounded-full" style="background:${strategy.color};"></span>${label}</span>
+            <span class="text-xs text-slate-400">${rounds.length} rounds</span>
+          </button>
+          <div class="px-4 py-3 space-y-2 ${strategy.debug.expanded ? '' : 'hidden'}" data-debug-body="${index}">
+            <div class="text-xs text-slate-400">${summary}</div>
+            <div class="space-y-2">${roundsMarkup}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
     function renderStrategies() {
       strategiesWrap.innerHTML = strategies.map((s,i) => {
         ensureStrategyTriggers(s);
+        ensureStrategyDebug(s);
         const triggerBlocks = s.triggers.map((trigger, tIndex) => {
           const condRows = trigger.conditions.map((c,j)=>`
             <div class="flex items-center gap-2 mb-1" data-cond="${j}" data-trigger="${tIndex}">
@@ -530,6 +629,7 @@ function init() {
           </div>
         </div>`;
       }).join('');
+      renderDebugPanel();
     }
 
     strategiesWrap.addEventListener('input', (e) => {
@@ -537,6 +637,7 @@ function init() {
       if (idx === undefined) return;
       const s = strategies[idx];
       ensureStrategyTriggers(s);
+      ensureStrategyDebug(s);
       const field = e.target.dataset.field;
       switch (field) {
         case 'show': s.show = e.target.checked; syncChartDatasets(); break;
@@ -603,6 +704,7 @@ function init() {
         case 'riskRestart': s.risk.restart = e.target.value; break;
       }
       saveState();
+      renderDebugPanel();
     });
 
     strategiesWrap.addEventListener('click', (e) => {
@@ -610,6 +712,7 @@ function init() {
       if (idx === undefined) return;
       const s = strategies[idx];
       ensureStrategyTriggers(s);
+      ensureStrategyDebug(s);
       const action = e.target.dataset.action;
       if (action === 'remove') { strategies.splice(idx,1); renderStrategies(); syncChartDatasets(); }
       if (action === 'duplicate') {
@@ -625,6 +728,7 @@ function init() {
         clone.resumeHits = 0;
         clone.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
         clone.collapsed = false;
+        clone.debug = { rounds: [], expanded: true, selectedRound: null };
         strategies.push(clone);
         strategies.forEach((st,j)=>{ st.collapsed = j === strategies.length-1 ? false : true; });
         renderStrategies();
@@ -664,6 +768,7 @@ function init() {
         renderStrategies();
       }
       saveState();
+      renderDebugPanel();
     });
 
     if (addStrategyBtn) {
@@ -671,6 +776,7 @@ function init() {
         strategies.forEach(st => st.collapsed = true);
         const ns = defaultStrategy();
         ensureStrategyTriggers(ns);
+        ensureStrategyDebug(ns);
         ns.collapsed = false;
         strategies.push(ns);
         renderStrategies();
@@ -737,11 +843,14 @@ function init() {
         return;
       }
       const currMult = multipliers[preloadIdx++];
+      const roundNumber = preloadIdx;
       usedMultipliers.push(currMult);
       if (usedMultipliers.length > 10) usedMultipliers.shift();
       renderLastMultipliers(usedMultipliers);
 
       strategies.forEach(s => {
+        ensureStrategyDebug(s);
+        const bankrollBefore = s.bankroll;
         if (s.cooldown) {
           if (currMult >= s.cashout) {
             s.resumeHits++;
@@ -754,13 +863,27 @@ function init() {
           }
           s.data.push(s.bankroll);
           if (s.data.length > labels.length) s.data.shift();
+          pushDebugRound(s, {
+            round: roundNumber,
+            multiplier: currMult,
+            decision: 'Cooldown',
+            outcome: 'Paused',
+            bet: 0,
+            bankrollAfter: s.bankroll,
+            bankrollBefore
+          });
           return;
         }
 
         const shouldBet = evaluateTriggers(s.triggers, usedMultipliers);
+        let decision = 'Skip';
+        let outcome = 'No bet';
+        let bet = 0;
         if (shouldBet) {
           const seqMul = s.martingale && s.sequence.length ? (s.sequence[s.martiIdx] || 1) : 1;
-          const bet = s.betAmount * seqMul;
+          bet = s.betAmount * seqMul;
+          decision = 'Bet';
+          outcome = currMult >= s.cashout ? 'Win' : 'Loss';
           if (currMult >= s.cashout) {
             s.bankroll += bet * (s.cashout - 1);
             s.martiIdx = 0;
@@ -777,6 +900,16 @@ function init() {
         }
         s.data.push(s.bankroll);
         if (s.data.length > labels.length) s.data.shift();
+
+        pushDebugRound(s, {
+          round: roundNumber,
+          multiplier: currMult,
+          decision,
+          outcome,
+          bet,
+          bankrollAfter: s.bankroll,
+          bankrollBefore
+        });
       });
 
       labels.push(tick++);
@@ -784,6 +917,7 @@ function init() {
       syncChartDatasets();
 
       prevMult = currMult;
+      renderDebugPanel();
     }
 
     function startLoop() {
@@ -821,11 +955,15 @@ function init() {
         s.cooldown = false;
         s.resumeHits = 0;
         s.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+        ensureStrategyDebug(s);
+        s.debug.rounds = [];
+        s.debug.selectedRound = null;
       });
 
       renderLastMultipliers([]);
       syncChartDatasets();
       chart.update();
+      renderDebugPanel();
 
       const hasMultipliers = multipliers.length > 0;
       const shouldRun = keepRunningState ? previousRunning : true;
@@ -906,6 +1044,37 @@ function init() {
           showMultipliersFeedback(result.message, 'error');
         }
         statusMessage(result.message);
+      });
+    }
+
+    if (debugWrap) {
+      debugWrap.addEventListener('click', (event) => {
+        const toggle = event.target.closest('[data-debug-toggle]');
+        if (toggle) {
+          const idx = parseInt(toggle.dataset.debugToggle, 10);
+          if (Number.isInteger(idx) && strategies[idx]) {
+            const strategy = strategies[idx];
+            ensureStrategyDebug(strategy);
+            strategy.debug.expanded = !strategy.debug.expanded;
+            if (!strategy.debug.expanded) {
+              strategy.debug.selectedRound = null;
+            }
+            renderDebugPanel();
+          }
+          return;
+        }
+
+        const roundBtn = event.target.closest('[data-debug-round]');
+        if (roundBtn) {
+          const sIdx = parseInt(roundBtn.dataset.debugStrategy, 10);
+          const rIdx = parseInt(roundBtn.dataset.debugRound, 10);
+          if (Number.isInteger(sIdx) && Number.isInteger(rIdx) && strategies[sIdx]) {
+            const strategy = strategies[sIdx];
+            ensureStrategyDebug(strategy);
+            strategy.debug.selectedRound = strategy.debug.selectedRound === rIdx ? null : rIdx;
+            renderDebugPanel();
+          }
+        }
       });
     }
 

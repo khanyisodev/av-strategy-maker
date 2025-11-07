@@ -175,8 +175,6 @@ function init() {
       "26.34x", "5.17x", "1.6x", "2.14x", "1x", "9.77x", "1.05x", "1x", "1.1x", "2.52x",
       "2.07x", "1.44x", "1.04x", "1.01x", "1.1x", "1.22x", "1.01x", "1.19x", "1.03x", "2.3x"
     ].map(s => parseFloat(s.replace(/x$/i, '')));
-    const LOOP = true;
-
     // -----------------------------
     // Constants (bankroll logic)
     // -----------------------------
@@ -189,6 +187,11 @@ function init() {
     // -----------------------------
     const multisWrap = document.getElementById('multis');
     const statusEl = document.getElementById('status');
+    const statusMessage = (text) => {
+      if (statusEl) {
+        statusEl.textContent = text || '';
+      }
+    };
     const formatMult = (x) => x.toFixed(2);
 
     function hexToRgba(hex, alpha = 1) {
@@ -526,10 +529,17 @@ function init() {
       chart.data.labels = labels;
     }
 
+    function finishSimulation() {
+      stopLoop();
+      running = false;
+      btnToggle.textContent = 'Resume';
+      statusMessage('Simulation paused — reached end of preloaded multipliers. Use Reset to run again.');
+    }
+
     function step() {
       if (preloadIdx >= PRELOADED.length) {
-        if (!LOOP) return;
-        preloadIdx = 0;
+        finishSimulation();
+        return;
       }
       const currMult = PRELOADED[preloadIdx++];
       usedMultipliers.push(currMult);
@@ -582,9 +592,14 @@ function init() {
     }
 
     function startLoop() {
+      if (preloadIdx >= PRELOADED.length) {
+        finishSimulation();
+        return;
+      }
       stopLoop();
       const delay = Math.round(parseInt(speedEl.value, 10) * 1.5);
       interval = setInterval(step, delay);
+      statusMessage('');
     }
     function stopLoop() { if (interval) { clearInterval(interval); interval = null; } }
 
@@ -621,6 +636,7 @@ function init() {
       if (!running) { running = true; btnToggle.textContent = 'Pause'; }
       startLoop();
       saveState();
+      statusMessage('');
     });
 
     if (btnSettings && settingsModal) {

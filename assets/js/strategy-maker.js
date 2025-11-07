@@ -202,6 +202,72 @@ function init() {
     let labels = Array.from({ length: maxPointsDefault }, (_, i) => i - maxPointsDefault);
 
     const strategies = [];
+
+    function createTrigger() {
+      return { conditions: [] };
+    }
+
+    function normalizeCondition(raw) {
+      const allowedOps = ['>', '<', '>=', '<=', '=='];
+      const pos = parseInt(raw?.pos, 10);
+      const value = parseFloat(raw?.value);
+      const op = typeof raw?.op === 'string' && allowedOps.includes(raw.op) ? raw.op : '>';
+      return {
+        pos: Number.isInteger(pos) && pos > 0 ? pos : 1,
+        op,
+        value: Number.isFinite(value) ? value : 1,
+      };
+    }
+
+    function buildConditionGroups(conditions) {
+      if (!Array.isArray(conditions) || conditions.length === 0) {
+        return [];
+      }
+
+      return conditions.reduce((groups, condition, index) => {
+        if (index === 0) {
+          groups.push([condition]);
+          return groups;
+        }
+
+        const joiner = typeof condition.logic === 'string'
+          ? condition.logic.trim().toUpperCase()
+          : 'AND';
+
+        if (joiner === 'OR') {
+          groups.push([condition]);
+        } else if (groups.length) {
+          groups[groups.length - 1].push(condition);
+        } else {
+          groups.push([condition]);
+        }
+
+        return groups;
+      }, []);
+    }
+
+    function normalizeTriggers(saved) {
+      const normalized = Array.isArray(saved?.triggers)
+        ? saved.triggers.map(trigger => ({
+            conditions: Array.isArray(trigger?.conditions)
+              ? trigger.conditions.map(normalizeCondition)
+              : []
+          }))
+        : [];
+
+      if (normalized.length) {
+        return normalized;
+      }
+
+      const legacyGroups = buildConditionGroups(Array.isArray(saved?.conditions) ? saved.conditions : []);
+      if (legacyGroups.length) {
+        return legacyGroups.map(group => ({
+          conditions: group.map(normalizeCondition)
+        }));
+      }
+
+      return [createTrigger()];
+    }
     function normalizeColorList(list) {
       return list.map(color => (color || '').toLowerCase());
     }
@@ -288,7 +354,7 @@ function init() {
         show: true,
         martingale: false,
         sequence: [],
-        conditions: [],
+        triggers: [createTrigger()],
         risk: { enabled:false, rounds:0, resumeAbove:0, restart:'start' },
         second: { enabled:false, amount:0, restart:'restart', lockRounds:0 },
         bankroll: INITIAL_BANKROLL,
@@ -306,8 +372,28 @@ function init() {
       const state = {
         speed: speedEl.value,
         window: windowEl.value,
-        strategies: strategies.map(({ name, cashout, betAmount, show, martingale, sequence, conditions, risk, second, color, collapsed }) => ({
-          name, cashout, betAmount, show, martingale, sequence, conditions, risk, second, color, collapsed
+        strategies: strategies.map(({ name, cashout, betAmount, show, martingale, sequence, triggers, risk, second, color, collapsed }) => ({
+          name,
+          cashout,
+          betAmount,
+          show,
+          martingale,
+          sequence,
+          triggers: Array.isArray(triggers)
+            ? triggers.map(trigger => ({
+                conditions: Array.isArray(trigger.conditions)
+                  ? trigger.conditions.map(cond => ({
+                      pos: cond.pos,
+                      op: cond.op,
+                      value: cond.value,
+                    }))
+                  : []
+              }))
+            : [createTrigger()],
+          risk,
+          second,
+          color,
+          collapsed
         })),
         multipliers
       };
@@ -341,6 +427,8 @@ function init() {
             base.cooldown = false;
             base.resumeHits = 0;
             base.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+            base.triggers = normalizeTriggers(saved);
+            delete base.conditions;
             strategies.push(base);
           });
         }
@@ -352,28 +440,53 @@ function init() {
     renderStrategies();
     syncChartDatasets();
 
+    function ensureStrategyTriggers(strategy) {
+      if (!Array.isArray(strategy.triggers)) {
+        strategy.triggers = [createTrigger()];
+      }
+      if (!strategy.triggers.length) {
+        strategy.triggers.push(createTrigger());
+      }
+      strategy.triggers.forEach(trigger => {
+        if (!Array.isArray(trigger.conditions)) {
+          trigger.conditions = [];
+        }
+      });
+    }
+
     function renderStrategies() {
       strategiesWrap.innerHTML = strategies.map((s,i) => {
-        const condRows = s.conditions.map((c,j)=>`
-          <div class="flex items-center gap-2 mb-1" data-cond="${j}">
-            ${j>0?`<select data-field="logic" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
-                      <option value="AND" ${c.logic==='AND'?'selected':''}>AND</option>
-                      <option value="OR" ${c.logic==='OR'?'selected':''}>OR</option>
-                    </select>`:''}
-            <span class="text-xs">Prev Mult</span>
-            <select data-field="pos" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
-              ${Array.from({length:10},(_,k)=>`<option value="${k+1}" ${c.pos==k+1?'selected':''}>${k+1}</option>`).join('')}
-            </select>
-            <select data-field="op" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
-              <option value=">">></option>
-              <option value="<"><</option>
-              <option value=">=">>=</option>
-              <option value="<="><=</option>
-              <option value="==">=</option>
-            </select>
-            <input type="number" step="0.01" data-field="value" value="${c.value}" class="w-20 bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs"/>
-            <button type="button" data-action="remove-cond" class="text-rose-400 text-xs">&times;</button>
-          </div>`).join('');
+        ensureStrategyTriggers(s);
+        const triggerBlocks = s.triggers.map((trigger, tIndex) => {
+          const condRows = trigger.conditions.map((c,j)=>`
+            <div class="flex items-center gap-2 mb-1" data-cond="${j}" data-trigger="${tIndex}">
+              <span class="text-xs">Prev Mult</span>
+              <select data-field="condPos" data-trigger="${tIndex}" data-cond="${j}" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
+                ${Array.from({length:10},(_,k)=>`<option value="${k+1}" ${c.pos==k+1?'selected':''}>${k+1}</option>`).join('')}
+              </select>
+              <select data-field="condOp" data-trigger="${tIndex}" data-cond="${j}" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
+                <option value=">" ${c.op==='>'?'selected':''}>&gt;</option>
+                <option value="<" ${c.op==='<'?'selected':''}>&lt;</option>
+                <option value=">=" ${c.op==='>='?'selected':''}>&ge;</option>
+                <option value="<=" ${c.op==='<='?'selected':''}>&le;</option>
+                <option value="==" ${c.op==='=='?'selected':''}>=</option>
+              </select>
+              <input type="number" step="0.01" data-field="condValue" data-trigger="${tIndex}" data-cond="${j}" value="${c.value}" class="w-20 bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs"/>
+              <button type="button" data-action="remove-cond" data-trigger="${tIndex}" data-cond="${j}" class="text-rose-400 text-xs">&times;</button>
+            </div>`).join('');
+          const emptyState = !trigger.conditions.length
+            ? '<p class="text-xs text-slate-500 mb-1">No conditions yet. Add one to define this trigger.</p>'
+            : '';
+          return `<div class="rounded border border-slate-700 p-3 bg-slate-900/40 space-y-2" data-trigger-block="${tIndex}">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Trigger ${tIndex + 1}</h4>
+              ${s.triggers.length > 1 ? `<button type="button" data-action="remove-trigger" data-trigger="${tIndex}" class="text-rose-400 text-xs">Remove trigger</button>` : ''}
+            </div>
+            ${emptyState}
+            <div class="conditions" data-cond-wrap>${condRows}</div>
+            <button type="button" data-action="add-cond" data-trigger="${tIndex}" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Condition</button>
+          </div>`;
+        }).join('');
         return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${i}">
           <div class="flex justify-between items-center gap-3">
             <div class="flex items-center gap-2 flex-1">
@@ -399,9 +512,9 @@ function init() {
             <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount <input type="number" data-field="betAmount" value="${s.betAmount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
             <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="martingale" ${s.martingale?'checked':''}/> Martingale</label>
             <input type="text" data-field="sequence" placeholder="1, 1.88, 2.31" value="${s.sequence.join(', ')}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm ${s.martingale?'':'hidden'}" />
-            <div class="mt-2 text-sm text-slate-200">Conditions</div>
-            <div class="conditions" data-cond-wrap>${condRows}</div>
-            <button type="button" data-action="add-cond" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Condition</button>
+            <div class="mt-2 text-sm text-slate-200">Triggers</div>
+            <div class="space-y-3">${triggerBlocks}</div>
+            <button type="button" data-action="add-trigger" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Trigger</button>
             <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="secondEnabled" ${s.second.enabled?'checked':''}/>Second bet</label>
             <div class="second-bet-fields ${s.second.enabled?'':'hidden'} space-y-2">
               <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount<input type="number" data-field="secondAmount" value="${s.second.amount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
@@ -423,6 +536,7 @@ function init() {
       const idx = e.target.closest('[data-index]')?.dataset.index;
       if (idx === undefined) return;
       const s = strategies[idx];
+      ensureStrategyTriggers(s);
       const field = e.target.dataset.field;
       switch (field) {
         case 'show': s.show = e.target.checked; syncChartDatasets(); break;
@@ -446,10 +560,39 @@ function init() {
           }
           break;
         }
-        case 'logic': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].logic = e.target.value; break; }
-        case 'pos': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].pos = parseInt(e.target.value,10); break; }
-        case 'op': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].op = e.target.value; break; }
-        case 'value': { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions[ci].value = parseFloat(e.target.value); break; }
+        case 'condPos': {
+          const tIdx = parseInt(e.target.dataset.trigger, 10);
+          const cIdx = parseInt(e.target.dataset.cond, 10);
+          if (!Number.isInteger(tIdx) || !Number.isInteger(cIdx)) break;
+          const trigger = s.triggers?.[tIdx];
+          if (!trigger) break;
+          if (!Array.isArray(trigger.conditions)) trigger.conditions = [];
+          if (!trigger.conditions[cIdx]) break;
+          trigger.conditions[cIdx].pos = parseInt(e.target.value,10) || 1;
+          break;
+        }
+        case 'condOp': {
+          const tIdx = parseInt(e.target.dataset.trigger, 10);
+          const cIdx = parseInt(e.target.dataset.cond, 10);
+          if (!Number.isInteger(tIdx) || !Number.isInteger(cIdx)) break;
+          const trigger = s.triggers?.[tIdx];
+          if (!trigger) break;
+          if (!Array.isArray(trigger.conditions)) trigger.conditions = [];
+          if (!trigger.conditions[cIdx]) break;
+          trigger.conditions[cIdx].op = e.target.value;
+          break;
+        }
+        case 'condValue': {
+          const tIdx = parseInt(e.target.dataset.trigger, 10);
+          const cIdx = parseInt(e.target.dataset.cond, 10);
+          if (!Number.isInteger(tIdx) || !Number.isInteger(cIdx)) break;
+          const trigger = s.triggers?.[tIdx];
+          if (!trigger) break;
+          if (!Array.isArray(trigger.conditions)) trigger.conditions = [];
+          if (!trigger.conditions[cIdx]) break;
+          trigger.conditions[cIdx].value = parseFloat(e.target.value);
+          break;
+        }
         case 'secondEnabled': s.second.enabled = e.target.checked; renderStrategies(); break;
         case 'secondAmount': s.second.amount = parseFloat(e.target.value) || 0; break;
         case 'secondRestart': s.second.restart = e.target.value; break;
@@ -466,10 +609,12 @@ function init() {
       const idx = e.target.closest('[data-index]')?.dataset.index;
       if (idx === undefined) return;
       const s = strategies[idx];
+      ensureStrategyTriggers(s);
       const action = e.target.dataset.action;
       if (action === 'remove') { strategies.splice(idx,1); renderStrategies(); syncChartDatasets(); }
       if (action === 'duplicate') {
         const clone = JSON.parse(JSON.stringify(s));
+        ensureStrategyTriggers(clone);
         const randomColor = randomStrategyColor([...strategies.map(st => st.color), s.color]);
         clone.color = randomColor;
         const maxPoints = parseInt(windowEl.value, 10);
@@ -490,8 +635,34 @@ function init() {
         strategies.forEach((st,j)=>{ st.collapsed = j==idx ? !st.collapsed : (isOpening ? true : st.collapsed); });
         renderStrategies();
       }
-      if (action === 'add-cond') { s.conditions.push({ logic: 'AND', pos:1, op:'>', value:1.0 }); renderStrategies(); }
-      if (action === 'remove-cond') { const ci = e.target.closest('[data-cond]').dataset.cond; s.conditions.splice(ci,1); renderStrategies(); }
+      if (action === 'add-cond') {
+        const tIdx = parseInt(e.target.dataset.trigger, 10);
+        if (!Number.isInteger(tIdx)) return;
+        ensureStrategyTriggers(s);
+        s.triggers[tIdx].conditions.push({ pos:1, op:'>', value:1.0 });
+        renderStrategies();
+      }
+      if (action === 'remove-cond') {
+        const tIdx = parseInt(e.target.dataset.trigger, 10);
+        const cIdx = parseInt(e.target.dataset.cond, 10);
+        if (!Number.isInteger(tIdx) || !Number.isInteger(cIdx)) return;
+        const trigger = s.triggers?.[tIdx];
+        if (!trigger) return;
+        trigger.conditions.splice(cIdx,1);
+        renderStrategies();
+      }
+      if (action === 'add-trigger') {
+        ensureStrategyTriggers(s);
+        s.triggers.push(createTrigger());
+        renderStrategies();
+      }
+      if (action === 'remove-trigger') {
+        const tIdx = parseInt(e.target.dataset.trigger, 10);
+        if (!Number.isInteger(tIdx)) return;
+        if (s.triggers.length <= 1) return;
+        s.triggers.splice(tIdx,1);
+        renderStrategies();
+      }
       saveState();
     });
 
@@ -499,6 +670,7 @@ function init() {
       addStrategyBtn.addEventListener('click', () => {
         strategies.forEach(st => st.collapsed = true);
         const ns = defaultStrategy();
+        ensureStrategyTriggers(ns);
         ns.collapsed = false;
         strategies.push(ns);
         renderStrategies();
@@ -521,35 +693,8 @@ function init() {
       chart.update('none');
     }
 
-    function buildConditionGroups(conditions) {
-      if (!Array.isArray(conditions) || conditions.length === 0) {
-        return [];
-      }
-
-      return conditions.reduce((groups, condition, index) => {
-        if (index === 0) {
-          groups.push([condition]);
-          return groups;
-        }
-
-        const joiner = typeof condition.logic === 'string'
-          ? condition.logic.trim().toUpperCase()
-          : 'AND';
-
-        if (joiner === 'OR') {
-          groups.push([condition]);
-        } else if (groups.length) {
-          groups[groups.length - 1].push(condition);
-        } else {
-          groups.push([condition]);
-        }
-
-        return groups;
-      }, []);
-    }
-
-    function evaluateConditions(conds, history) {
-      if (conds.length === 0) return false;
+    function evaluateTriggers(triggers, history) {
+      if (!Array.isArray(triggers) || !triggers.length) return false;
 
       const evalCond = c => {
         const idx = history.length - c.pos;
@@ -566,10 +711,7 @@ function init() {
         }
       };
 
-      const groups = buildConditionGroups(conds);
-      if (!groups.length) return false;
-
-      return groups.some(group => group.length > 0 && group.every(cond => evalCond(cond)));
+      return triggers.some(trigger => Array.isArray(trigger.conditions) && trigger.conditions.length > 0 && trigger.conditions.every(cond => evalCond(cond)));
     }
 
     function clampWindow() {
@@ -615,7 +757,7 @@ function init() {
           return;
         }
 
-        const shouldBet = evaluateConditions(s.conditions, usedMultipliers);
+        const shouldBet = evaluateTriggers(s.triggers, usedMultipliers);
         if (shouldBet) {
           const seqMul = s.martingale && s.sequence.length ? (s.sequence[s.martiIdx] || 1) : 1;
           const bet = s.betAmount * seqMul;

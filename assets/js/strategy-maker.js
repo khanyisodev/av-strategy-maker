@@ -348,9 +348,35 @@ function init() {
     let running = false;
     let interval = null;
 
+    function resolveWindowLimit(value) {
+      if (value === 'all') return null;
+      const parsed = parseInt(value, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return maxPointsDefault;
+      }
+      return parsed;
+    }
+
+    function getWindowLimit() {
+      if (!windowEl) return maxPointsDefault;
+      const limit = resolveWindowLimit(windowEl.value);
+      if (limit === maxPointsDefault && windowEl.value !== 'all' && windowEl.value !== maxPointsDefault.toString()) {
+        windowEl.value = maxPointsDefault.toString();
+      }
+      return limit;
+    }
+
+    function getInitialSeriesLength() {
+      const limit = getWindowLimit();
+      if (limit === null) {
+        return labels.length || maxPointsDefault;
+      }
+      return limit;
+    }
+
     function defaultStrategy() {
       const color = nextStrategyColor();
-      const maxPoints = parseInt(windowEl.value, 10);
+      const seriesLength = getInitialSeriesLength();
       return {
         name: '',
         cashout: defaultCashout,
@@ -366,7 +392,7 @@ function init() {
         lossStreak: 0,
         cooldown: false,
         resumeHits: 0,
-        data: Array.from({ length: maxPoints }, () => INITIAL_BANKROLL),
+        data: Array.from({ length: seriesLength }, () => INITIAL_BANKROLL),
         color,
         collapsed: false,
         debug: {
@@ -454,7 +480,27 @@ function init() {
         if (!raw) return;
         const state = JSON.parse(raw);
         if (state.speed) speedEl.value = state.speed;
-        if (state.window) windowEl.value = state.window;
+        if (state.window && windowEl) {
+          const options = Array.from(windowEl.options || []);
+          const fallback = maxPointsDefault.toString();
+          let selected;
+          if (options.some(opt => opt.value === state.window)) {
+            selected = state.window;
+          } else if (['240', '250'].includes(state.window)) {
+            selected = 'all';
+          } else {
+            selected = fallback;
+          }
+          windowEl.value = selected;
+        }
+        const initialLimit = getWindowLimit();
+        if (initialLimit === null) {
+          const baseLength = Math.max(labels.length, maxPointsDefault);
+          labels = Array.from({ length: baseLength }, (_, i) => i - baseLength);
+        } else {
+          labels = Array.from({ length: initialLimit }, (_, i) => i - initialLimit);
+        }
+        chart.data.labels = labels;
         if (Array.isArray(state.multipliers)) {
           multipliers = state.multipliers
             .map(value => parseFloat(value))
@@ -468,13 +514,13 @@ function init() {
             if (!HEX_COLOR_REGEX.test(base.color || '')) {
               base.color = randomStrategyColor(strategies.map(st => st.color));
             }
-            const maxPoints = parseInt(windowEl.value, 10);
             base.bankroll = INITIAL_BANKROLL;
             base.martiIdx = 0;
             base.lossStreak = 0;
             base.cooldown = false;
             base.resumeHits = 0;
-            base.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+            const seriesLength = getInitialSeriesLength();
+            base.data = Array.from({ length: seriesLength }, () => INITIAL_BANKROLL);
             base.triggers = normalizeTriggers(saved);
             ensureStrategyDebug(base);
             base.debug.rounds = [];
@@ -867,13 +913,13 @@ function init() {
         ensureStrategyTriggers(clone);
         const randomColor = randomStrategyColor([...strategies.map(st => st.color), s.color]);
         clone.color = randomColor;
-        const maxPoints = parseInt(windowEl.value, 10);
+        const seriesLength = getInitialSeriesLength();
         clone.bankroll = INITIAL_BANKROLL;
         clone.martiIdx = 0;
         clone.lossStreak = 0;
         clone.cooldown = false;
         clone.resumeHits = 0;
-        clone.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+        clone.data = Array.from({ length: seriesLength }, () => INITIAL_BANKROLL);
         clone.collapsed = false;
         clone.debug = { rounds: [], expanded: true, selectedRound: null };
         strategies.push(clone);
@@ -968,8 +1014,12 @@ function init() {
     }
 
     function clampWindow() {
-      const maxPoints = parseInt(windowEl.value, 10);
-      const excess = labels.length - maxPoints;
+      const limit = getWindowLimit();
+      if (limit === null) {
+        chart.data.labels = labels;
+        return;
+      }
+      const excess = labels.length - limit;
       if (excess > 0) {
         labels.splice(0, excess);
         strategies.forEach(s => s.data.splice(0, excess));
@@ -1092,8 +1142,10 @@ function init() {
       prevMult = null;
       preloadIdx = 0;
 
-      const maxPoints = parseInt(windowEl.value, 10);
-      labels = Array.from({ length: maxPoints }, (_, i) => i - maxPoints);
+      const limit = getWindowLimit();
+      const baseLength = limit === null ? maxPointsDefault : limit;
+      labels = Array.from({ length: baseLength }, (_, i) => i - baseLength);
+      chart.data.labels = labels;
 
       strategies.forEach(s => {
         s.bankroll = INITIAL_BANKROLL;
@@ -1101,7 +1153,7 @@ function init() {
         s.lossStreak = 0;
         s.cooldown = false;
         s.resumeHits = 0;
-        s.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+        s.data = Array.from({ length: baseLength }, () => INITIAL_BANKROLL);
         ensureStrategyDebug(s);
         s.debug.rounds = [];
         s.debug.selectedRound = null;

@@ -78,13 +78,33 @@ if (!defined('ABSPATH')) {
     </section>
   </main>
   <div id="settingsModal" aria-hidden="true" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-900/60">
-    <div class="bg-slate-800 p-6 rounded-xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
-      <div class="flex justify-between items-center mb-4">
-        <h2 class="text-lg font-medium text-slate-100">Strategies</h2>
+    <div class="bg-slate-800 p-6 rounded-xl max-w-3xl w-full max-h-[95vh] overflow-y-auto">
+      <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 class="text-lg font-medium text-slate-100">Settings</h2>
+          <p class="text-sm text-slate-400 mt-1">Manage strategy configs and the multiplier dataset that powers the simulation.</p>
+        </div>
         <button id="settingsClose" type="button" class="text-slate-400 hover:text-slate-200 text-2xl leading-none">&times;<span class="sr-only">Close</span></button>
       </div>
-      <div id="strategiesWrap" class="space-y-4"></div>
-      <button id="addStrategy" type="button" class="mt-4 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm">Add Strategy</button>
+      <div class="flex items-center gap-2 border-b border-slate-700 pb-3 mb-4" role="tablist" aria-label="Settings tabs">
+        <button type="button" data-tab="strategies" class="settings-tab px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-150" aria-selected="true">Strategies</button>
+        <button type="button" data-tab="multipliers" class="settings-tab px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-150 text-slate-400" aria-selected="false">Multipliers</button>
+      </div>
+      <section id="tabStrategies" data-tab-panel="strategies" class="space-y-4">
+        <div id="strategiesWrap" class="space-y-4"></div>
+        <button id="addStrategy" type="button" class="mt-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm">Add Strategy</button>
+      </section>
+      <section id="tabMultipliers" data-tab-panel="multipliers" class="hidden">
+        <p class="text-sm text-slate-300">Paste or enter multipliers separated by commas or new lines. Values can include an optional trailing <code class="text-xs bg-slate-700 px-1 py-0.5 rounded">x</code>.</p>
+        <textarea id="multipliersInput" class="mt-3 w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" rows="8" placeholder="1.89x, 7.16x, 1.7x"></textarea>
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+          <button id="saveMultipliers" type="button" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm">Save multipliers</button>
+          <button id="resetMultipliers" type="button" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Restore defaults</button>
+          <span id="multipliersFeedback" class="text-xs text-emerald-400 hidden"></span>
+        </div>
+        <div class="mt-4 text-xs text-slate-400">Active multipliers: <span id="multipliersCount">0</span></div>
+        <div id="multipliersPreview" class="mt-2 flex flex-wrap gap-2"></div>
+      </section>
     </div>
   </div>
 </div>

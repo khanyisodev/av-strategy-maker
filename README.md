@@ -4,12 +4,13 @@ WordPress plugin that delivers a bankroll simulation dashboard alongside an inte
 
 ## Shortcodes
 
-- `[strategy_maker]` – renders the bankroll simulation complete with configurable strategies, charting, multiplier history and a Tailwind-powered settings modal that persists to `localStorage`.
+- `[strategy_maker]` – renders the bankroll simulation complete with configurable strategies, charting, multiplier history and a Tailwind-powered settings modal (persisted to `localStorage`) that now includes tabs for strategies and the multipliers dataset driving the playback.
 - `[multiplier_pattern_scanner]` – outputs the analytics console from the original HTML prototype, featuring KPI cards, an advanced condition builder, auto-generated diagnostics and demo data to experiment with different filters. The standalone `multiplier-pattern-scanner.html` file has been removed, so the shortcode is now the canonical implementation.
 
 ## Features
 
 - Strategy cards support dual bets, martingale sequences, conditional groups (AND/OR) and risk controls, all adjustable through a responsive modal interface.
 - The Chart.js canvas visualises the most recent multipliers while the toolbar provides controls for speed, window size, pausing and resetting the looped demo data.
+- Multipliers can be edited from the modal’s new tab using comma- or newline-separated values (with optional `x` suffixes), letting you rebuild the playback dataset without editing source files, and the values persist across sessions.
 - Pattern scanner includes timeframe filters, customisable occurrence targets and a diagnostics panel that runs automated tests to confirm the logic remains sound.
 - Assets are registered and enqueued only when needed to keep page loads lean and to make future overrides easy via filters.

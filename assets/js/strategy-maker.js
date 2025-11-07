@@ -7,7 +7,7 @@ function init() {
     // -----------------------------
     // Preloaded multipliers (looping)
     // -----------------------------
-    const PRELOADED = [
+    const DEFAULT_MULTIPLIERS = [
       "3.34x", "2.71x", "45.6x", "2.03x", "4.92x", "2.35x", "97.3x", "31.4x", "5.01x", "1.07x",
       "1.78x", "1.45x", "2.45x", "5.49x", "1.37x", "2.45x", "3x", "2.49x", "4.1x", "2.46x",
       "1.49x", "5.11x", "3.43x", "1.26x", "2.55x", "1.72x", "1.27x", "1.73x", "1.05x", "1.26x",
@@ -175,6 +175,8 @@ function init() {
       "26.34x", "5.17x", "1.6x", "2.14x", "1x", "9.77x", "1.05x", "1x", "1.1x", "2.52x",
       "2.07x", "1.44x", "1.04x", "1.01x", "1.1x", "1.22x", "1.01x", "1.19x", "1.03x", "2.3x"
     ].map(s => parseFloat(s.replace(/x$/i, '')));
+
+    let multipliers = [...DEFAULT_MULTIPLIERS];
     // -----------------------------
     // Constants (bankroll logic)
     // -----------------------------
@@ -207,6 +209,7 @@ function init() {
       return '#c017b4';              // >= 10
     }
     function renderLastMultipliers(list) {
+      if (!multisWrap) return;
       multisWrap.innerHTML = '';
       list.slice(-25).reverse().forEach(m => {
         const primary = colorForMultiplier(m);
@@ -217,6 +220,120 @@ function init() {
         pill.style.backgroundColor = hexToRgba(primary, 0.15);
         pill.textContent = formatMult(m);
         multisWrap.appendChild(pill);
+      });
+    }
+
+    function formatMultiplierLabel(value) {
+      if (!Number.isFinite(value)) return '';
+      const normalized = Number(value.toFixed(2));
+      return `${normalized.toString()}x`;
+    }
+
+    function multipliersToText(list) {
+      return list.map(formatMultiplierLabel).join(', ');
+    }
+
+    function parseMultiplierInput(text) {
+      return text
+        .split(/[\s,]+/)
+        .map(token => token.trim().replace(/^['"]+|['"]+$/g, ''))
+        .filter(Boolean)
+        .map(token => parseFloat(token.replace(/x$/i, '')))
+        .filter(num => !Number.isNaN(num) && num > 0);
+    }
+
+    function renderMultipliersPreview(list) {
+      if (!multipliersPreview) return;
+      multipliersPreview.innerHTML = '';
+      if (!list.length) {
+        const empty = document.createElement('p');
+        empty.className = 'text-xs text-slate-500';
+        empty.textContent = 'No multipliers configured yet.';
+        multipliersPreview.appendChild(empty);
+        return;
+      }
+      const previewSlice = list.slice(0, 150);
+      previewSlice.forEach((value) => {
+        const primary = colorForMultiplier(value);
+        const pill = document.createElement('span');
+        pill.className = 'px-2.5 py-1 rounded-full border text-xs mono w-fit';
+        pill.style.color = primary;
+        pill.style.borderColor = primary;
+        pill.style.backgroundColor = hexToRgba(primary, 0.15);
+        pill.textContent = formatMultiplierLabel(value);
+        multipliersPreview.appendChild(pill);
+      });
+      if (list.length > previewSlice.length) {
+        const more = document.createElement('span');
+        more.className = 'text-xs text-slate-500 self-center';
+        more.textContent = `+${list.length - previewSlice.length} more`;
+        multipliersPreview.appendChild(more);
+      }
+    }
+
+    function updateMultipliersMeta() {
+      if (multipliersCount) {
+        multipliersCount.textContent = multipliers.length.toString();
+      }
+      renderMultipliersPreview(multipliers);
+    }
+
+    function syncMultipliersEditor() {
+      if (multipliersInput) {
+        multipliersInput.value = multipliersToText(multipliers);
+      }
+      updateMultipliersMeta();
+    }
+
+    let multipliersFeedbackTimeout = null;
+
+    function showMultipliersFeedback(message, type = 'success') {
+      if (!multipliersFeedback) return;
+      multipliersFeedback.textContent = message;
+      multipliersFeedback.classList.remove('hidden', 'text-emerald-400', 'text-rose-400');
+      multipliersFeedback.classList.add(type === 'error' ? 'text-rose-400' : 'text-emerald-400');
+      if (multipliersFeedbackTimeout) clearTimeout(multipliersFeedbackTimeout);
+      multipliersFeedbackTimeout = setTimeout(() => {
+        if (multipliersFeedback) multipliersFeedback.classList.add('hidden');
+      }, 2400);
+    }
+
+    function setMultipliers(newList, { keepRunningState = true } = {}) {
+      const sanitized = newList.filter(num => Number.isFinite(num) && num > 0);
+      multipliers = sanitized;
+      syncMultipliersEditor();
+
+      const hasMultipliers = multipliers.length > 0;
+      const previousRunning = running;
+      resetSimulation({ keepRunningState, clearStatus: false, skipSave: true });
+
+      if (!hasMultipliers) {
+        running = false;
+        btnToggle.textContent = 'Resume';
+        statusMessage('No multipliers configured. Add values in Settings → Multipliers to run the simulation.');
+        saveState();
+        return { message: 'Please enter at least one multiplier.', type: 'error', count: 0 };
+      }
+
+      const restarted = previousRunning && keepRunningState;
+      const message = restarted
+        ? 'Simulation restarted with updated multipliers.'
+        : 'Multipliers saved. Press Resume to start the simulation.';
+
+      saveState();
+      return { message, type: 'success', count: multipliers.length };
+    }
+
+    function activateTab(target) {
+      tabButtons.forEach((btn) => {
+        const isActive = btn.dataset.tab === target;
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        btn.classList.toggle('bg-slate-700', isActive);
+        btn.classList.toggle('text-slate-100', isActive);
+        btn.classList.toggle('text-slate-400', !isActive);
+      });
+      tabPanels.forEach((panel) => {
+        panel.classList.toggle('hidden', panel.dataset.tabPanel !== target);
       });
     }
 
@@ -267,15 +384,23 @@ function init() {
     // -----------------------------
 
     // Simulation & UI logic
-    const btnToggle     = document.getElementById('btnToggle');
-    const btnReset      = document.getElementById('btnReset');
-    const btnSettings   = document.getElementById('btnSettings');
-    const settingsModal = document.getElementById('settingsModal');
-    const settingsClose = document.getElementById('settingsClose');
-    const speedEl       = document.getElementById('speed');
-    const windowEl      = document.getElementById('window');
-    const strategiesWrap= document.getElementById('strategiesWrap');
-    const addStrategyBtn= document.getElementById('addStrategy');
+    const btnToggle        = document.getElementById('btnToggle');
+    const btnReset         = document.getElementById('btnReset');
+    const btnSettings      = document.getElementById('btnSettings');
+    const settingsModal    = document.getElementById('settingsModal');
+    const settingsClose    = document.getElementById('settingsClose');
+    const speedEl          = document.getElementById('speed');
+    const windowEl         = document.getElementById('window');
+    const strategiesWrap   = document.getElementById('strategiesWrap');
+    const addStrategyBtn   = document.getElementById('addStrategy');
+    const multipliersInput = document.getElementById('multipliersInput');
+    const saveMultipliersBtn = document.getElementById('saveMultipliers');
+    const resetMultipliersBtn = document.getElementById('resetMultipliers');
+    const multipliersFeedback = document.getElementById('multipliersFeedback');
+    const multipliersCount = document.getElementById('multipliersCount');
+    const multipliersPreview = document.getElementById('multipliersPreview');
+    const tabButtons = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab]') : []);
+    const tabPanels = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab-panel]') : []);
 
     let running = true;
     let interval = null;
@@ -310,7 +435,8 @@ function init() {
         window: windowEl.value,
         strategies: strategies.map(({ name, cashout, betAmount, show, martingale, sequence, conditions, risk, second, color, collapsed }) => ({
           name, cashout, betAmount, show, martingale, sequence, conditions, risk, second, color, collapsed
-        }))
+        })),
+        multipliers
       };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
     }
@@ -322,6 +448,11 @@ function init() {
         const state = JSON.parse(raw);
         if (state.speed) speedEl.value = state.speed;
         if (state.window) windowEl.value = state.window;
+        if (Array.isArray(state.multipliers)) {
+          multipliers = state.multipliers
+            .map(value => parseFloat(value))
+            .filter(num => !Number.isNaN(num) && num > 0);
+        }
         if (Array.isArray(state.strategies)) {
           strategies.splice(0, strategies.length);
           state.strategies.forEach(saved => {
@@ -341,6 +472,7 @@ function init() {
     }
 
     loadState();
+    syncMultipliersEditor();
     renderStrategies();
     syncChartDatasets();
 
@@ -533,15 +665,15 @@ function init() {
       stopLoop();
       running = false;
       btnToggle.textContent = 'Resume';
-      statusMessage('Simulation paused — reached end of preloaded multipliers. Use Reset to run again.');
+      statusMessage('Simulation paused — reached end of the multipliers dataset. Add more under Settings → Multipliers or reset to play again.');
     }
 
     function step() {
-      if (preloadIdx >= PRELOADED.length) {
+      if (preloadIdx >= multipliers.length) {
         finishSimulation();
         return;
       }
-      const currMult = PRELOADED[preloadIdx++];
+      const currMult = multipliers[preloadIdx++];
       usedMultipliers.push(currMult);
       if (usedMultipliers.length > 10) usedMultipliers.shift();
       renderLastMultipliers(usedMultipliers);
@@ -592,28 +724,25 @@ function init() {
     }
 
     function startLoop() {
-      if (preloadIdx >= PRELOADED.length) {
+      if (!multipliers.length) {
+        stopLoop();
+        running = false;
+        btnToggle.textContent = 'Resume';
+        statusMessage('No multipliers configured. Add values in Settings → Multipliers to run the simulation.');
+        return;
+      }
+      if (preloadIdx >= multipliers.length) {
         finishSimulation();
         return;
       }
       stopLoop();
       const delay = Math.round(parseInt(speedEl.value, 10) * 1.5);
       interval = setInterval(step, delay);
-      statusMessage('');
     }
     function stopLoop() { if (interval) { clearInterval(interval); interval = null; } }
 
-    renderLastMultipliers([]);
-    startLoop();
-
-    btnToggle.addEventListener('click', () => {
-      running = !running;
-      btnToggle.textContent = running ? 'Pause' : 'Resume';
-      running ? startLoop() : stopLoop();
-    });
-    speedEl.addEventListener('input', () => { if (running) startLoop(); saveState(); });
-    windowEl.addEventListener('change', () => { clampWindow(); syncChartDatasets(); saveState(); });
-    btnReset.addEventListener('click', () => {
+    function resetSimulation({ keepRunningState = false, clearStatus = true, skipSave = false } = {}) {
+      const previousRunning = running;
       tick = 0;
       usedMultipliers = [];
       prevMult = null;
@@ -621,6 +750,7 @@ function init() {
 
       const maxPoints = parseInt(windowEl.value, 10);
       labels = Array.from({ length: maxPoints }, (_, i) => i - maxPoints);
+
       strategies.forEach(s => {
         s.bankroll = INITIAL_BANKROLL;
         s.martiIdx = 0;
@@ -629,15 +759,84 @@ function init() {
         s.resumeHits = 0;
         s.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
       });
+
       renderLastMultipliers([]);
       syncChartDatasets();
       chart.update();
 
-      if (!running) { running = true; btnToggle.textContent = 'Pause'; }
-      startLoop();
-      saveState();
-      statusMessage('');
+      const hasMultipliers = multipliers.length > 0;
+      const shouldRun = keepRunningState ? previousRunning : true;
+      running = shouldRun && hasMultipliers;
+      btnToggle.textContent = running ? 'Pause' : 'Resume';
+
+      if (running) {
+        startLoop();
+        if (clearStatus) statusMessage('');
+      } else {
+        stopLoop();
+        if (clearStatus) {
+          statusMessage(hasMultipliers ? '' : 'No multipliers configured. Add values in Settings → Multipliers to run the simulation.');
+        }
+      }
+
+      if (!skipSave) {
+        saveState();
+      }
+
+      return { previousRunning, hasMultipliers };
+    }
+
+    renderLastMultipliers([]);
+    startLoop();
+
+    btnToggle.addEventListener('click', () => {
+      running = !running;
+      btnToggle.textContent = running ? 'Pause' : 'Resume';
+      if (running) {
+        statusMessage('');
+        startLoop();
+      } else {
+        stopLoop();
+      }
     });
+    speedEl.addEventListener('input', () => { if (running) startLoop(); saveState(); });
+    windowEl.addEventListener('change', () => { clampWindow(); syncChartDatasets(); saveState(); });
+    btnReset.addEventListener('click', () => { resetSimulation(); });
+
+    if (tabButtons.length) {
+      activateTab('strategies');
+      tabButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activateTab(btn.dataset.tab);
+        });
+      });
+    }
+
+    if (saveMultipliersBtn) {
+      saveMultipliersBtn.addEventListener('click', () => {
+        if (!multipliersInput) return;
+        const parsed = parseMultiplierInput(multipliersInput.value);
+        const result = setMultipliers(parsed, { keepRunningState: true });
+        if (result.type === 'success') {
+          showMultipliersFeedback(`Saved ${result.count} multipliers.`, 'success');
+        } else {
+          showMultipliersFeedback(result.message, 'error');
+        }
+        statusMessage(result.message);
+      });
+    }
+
+    if (resetMultipliersBtn) {
+      resetMultipliersBtn.addEventListener('click', () => {
+        const result = setMultipliers([...DEFAULT_MULTIPLIERS], { keepRunningState: true });
+        if (result.type === 'success') {
+          showMultipliersFeedback(`Restored ${result.count} default multipliers.`, 'success');
+        } else {
+          showMultipliersFeedback(result.message, 'error');
+        }
+        statusMessage(result.message);
+      });
+    }
 
     if (btnSettings && settingsModal) {
       btnSettings.addEventListener("click", () => {

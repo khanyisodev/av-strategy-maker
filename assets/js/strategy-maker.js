@@ -521,11 +521,40 @@ function init() {
       chart.update('none');
     }
 
+    function buildConditionGroups(conditions) {
+      if (!Array.isArray(conditions) || conditions.length === 0) {
+        return [];
+      }
+
+      return conditions.reduce((groups, condition, index) => {
+        if (index === 0) {
+          groups.push([condition]);
+          return groups;
+        }
+
+        const joiner = typeof condition.logic === 'string'
+          ? condition.logic.trim().toUpperCase()
+          : 'AND';
+
+        if (joiner === 'OR') {
+          groups.push([condition]);
+        } else if (groups.length) {
+          groups[groups.length - 1].push(condition);
+        } else {
+          groups.push([condition]);
+        }
+
+        return groups;
+      }, []);
+    }
+
     function evaluateConditions(conds, history) {
       if (conds.length === 0) return false;
 
       const evalCond = c => {
-        const val = history[history.length - c.pos];
+        const idx = history.length - c.pos;
+        if (idx < 0) return false;
+        const val = history[idx];
         if (val === undefined) return false;
         switch (c.op) {
           case '>': return val > c.value;
@@ -537,20 +566,10 @@ function init() {
         }
       };
 
-      // Split conditions into groups separated by OR. Each group uses AND logic.
-      const groups = [];
-      let current = [];
-      conds.forEach((c, i) => {
-        if (i > 0 && c.logic === 'OR') {
-          groups.push(current);
-          current = [c];
-        } else {
-          current.push(c);
-        }
-      });
-      groups.push(current);
+      const groups = buildConditionGroups(conds);
+      if (!groups.length) return false;
 
-      return groups.some(group => group.every(cond => evalCond(cond)));
+      return groups.some(group => group.length > 0 && group.every(cond => evalCond(cond)));
     }
 
     function clampWindow() {

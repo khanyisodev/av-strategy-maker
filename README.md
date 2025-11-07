@@ -9,7 +9,7 @@ WordPress plugin that delivers a bankroll simulation dashboard alongside an inte
 
 ## Features
 
-- Strategy cards support dual bets, martingale sequences, conditional groups (AND/OR) and risk controls, all adjustable through a responsive modal interface.
+- Strategy cards support dual bets, martingale sequences, conditional groups (AND/OR) and risk controls, all adjustable through a responsive modal interface. Selecting <code>OR</code> starts a fresh group for the conditions that follow, so rules such as <em>Prev Mult 2 &gt; 1.6 OR Prev Mult 2 &lt; 1.6 AND Prev Mult 3 &gt; 1.6</em> evaluate as two distinct sets of requirements.
 - The Chart.js canvas visualises the most recent multipliers while the toolbar provides controls for speed, window size, pausing and resetting the simulation that advances exactly as far as your multiplier list.
 - Multipliers can be edited from the modal’s new tab using comma- or newline-separated values (quotes optional) with the familiar trailing `x`, letting you rebuild the playback dataset without editing source files, and the values persist across sessions.
 - Pattern scanner includes timeframe filters, customisable occurrence targets and a diagnostics panel that runs automated tests to confirm the logic remains sound.

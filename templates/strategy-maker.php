@@ -12,14 +12,14 @@ if (!defined('ABSPATH')) {
 <div id="strategy-maker-root">
   <main class="max-w-[1500px] mx-auto px-4 py-10">
     <header class="mb-6">
-      <h1 class="text-3xl font-semibold tracking-tight text-left">Bankroll Simulation (Dark • Preloaded)</h1>
+      <h1 class="text-3xl font-semibold tracking-tight text-left">Bankroll Simulation (Dark)</h1>
       <p class="text-slate-400 mt-1">Build and simulate custom strategies with dual bets, martingale sequences and risk controls.</p>
     </header>
 
     <section class="card rounded-2xl bg-slate-900/70 ring-1 ring-slate-800 p-5 md:p-6">
       <div class="flex flex-wrap items-center gap-3 mb-4">
         <button id="btnToggle" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-[.98] font-medium">
-          Pause
+          Resume
         </button>
 
         <div class="flex items-center gap-2">
@@ -95,11 +95,11 @@ if (!defined('ABSPATH')) {
         <button id="addStrategy" type="button" class="mt-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm">Add Strategy</button>
       </section>
       <section id="tabMultipliers" data-tab-panel="multipliers" class="hidden">
-        <p class="text-sm text-slate-300">Paste or enter multipliers separated by commas or new lines. Values can include an optional trailing <code class="text-xs bg-slate-700 px-1 py-0.5 rounded">x</code>.</p>
-        <textarea id="multipliersInput" class="mt-3 w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" rows="8" placeholder="1.89x, 7.16x, 1.7x"></textarea>
+        <p class="text-sm text-slate-300">Add multipliers exactly as they appear in the game log. Separate values with commas or new lines and keep the trailing <code class="text-xs bg-slate-700 px-1 py-0.5 rounded">x</code> for clarity.</p>
+        <textarea id="multipliersInput" class="mt-3 w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" rows="8" placeholder="&quot;1.89x&quot;,&#10;&quot;7.16x&quot;,&#10;&quot;1.7x&quot;"></textarea>
         <div class="mt-3 flex flex-wrap items-center gap-3">
           <button id="saveMultipliers" type="button" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm">Save multipliers</button>
-          <button id="resetMultipliers" type="button" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Restore defaults</button>
+          <button id="resetMultipliers" type="button" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Load sample multipliers</button>
           <span id="multipliersFeedback" class="text-xs text-emerald-400 hidden"></span>
         </div>
         <div class="mt-4 text-xs text-slate-400">Active multipliers: <span id="multipliersCount">0</span></div>

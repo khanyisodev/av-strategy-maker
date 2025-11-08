@@ -1058,8 +1058,9 @@ function init() {
       strategies.forEach(s => {
         ensureStrategyDebug(s);
         const bankrollBefore = s.bankroll;
+        const shouldBet = evaluateTriggers(s.triggers, usedMultipliers);
         if (s.cooldown) {
-          if (currMult >= s.cashout) {
+          if (shouldBet && currMult >= s.cashout) {
             s.resumeHits++;
             if (s.resumeHits >= s.risk.resumeAbove) {
               s.cooldown = false;
@@ -1082,7 +1083,6 @@ function init() {
           return;
         }
 
-        const shouldBet = evaluateTriggers(s.triggers, usedMultipliers);
         let decision = 'Skip';
         let outcome = 'No bet';
         let bet = 0;

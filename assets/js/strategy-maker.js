@@ -560,7 +560,16 @@ function init() {
         return;
       }
 
-      debugWrap.innerHTML = strategies.map((strategy, index) => {
+      const visibleStrategies = strategies
+        .map((strategy, index) => ({ strategy, index }))
+        .filter(({ strategy }) => strategy.show);
+
+      if (!visibleStrategies.length) {
+        debugWrap.innerHTML = '<p class="text-xs text-slate-500">Enable “Show” for a strategy to inspect its debug log.</p>';
+        return;
+      }
+
+      debugWrap.innerHTML = visibleStrategies.map(({ strategy, index }) => {
         ensureStrategyDebug(strategy);
         const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
         const summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;

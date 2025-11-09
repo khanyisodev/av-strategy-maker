@@ -12,6 +12,8 @@ function init() {
     ].map(s => parseFloat(s.replace(/x$/i, '')));
 
     let multipliers = [];
+    let pendingCsvSessions = [];
+    let pendingCsvFileName = '';
     // -----------------------------
     // Constants (bankroll logic)
     // -----------------------------
@@ -93,43 +95,144 @@ function init() {
         .map(line => line.trim())
         .filter(Boolean);
 
-      let headerIndex = -1;
-      let multiplierColumn = -1;
+      const sessions = [];
+      let current = null;
 
-      for (let i = 0; i < lines.length; i += 1) {
-        const cells = lines[i].split(';').map(cell => cell.trim());
-        const idx = cells.findIndex(cell => cell.toLowerCase() === 'multiplier');
-        if (idx !== -1) {
-          headerIndex = i;
-          multiplierColumn = idx;
-          break;
+      const pushCurrent = () => {
+        if (current && current.multipliers.length) {
+          sessions.push({ ...current, multipliers: current.multipliers.slice() });
         }
+      };
+
+      lines.forEach((line) => {
+        const cells = line.split(';').map(cell => cell.trim());
+        const headerIndex = cells.findIndex(cell => cell.toLowerCase() === 'multiplier');
+        const isHeader = headerIndex !== -1;
+
+        if (isHeader) {
+          pushCurrent();
+          current = {
+            header: line,
+            multiplierColumn: headerIndex,
+            multipliers: [],
+            startLabel: '',
+          };
+          return;
+        }
+
+        if (!current || current.multiplierColumn === -1) {
+          return;
+        }
+
+        if (cells.length <= current.multiplierColumn) {
+          return;
+        }
+
+        let rawValue = cells[current.multiplierColumn];
+        if (!rawValue) {
+          return;
+        }
+
+        rawValue = rawValue.replace(/^['"]+|['"]+$/g, '');
+        if (rawValue.includes(',') && !rawValue.includes('.')) {
+          rawValue = rawValue.replace(/,/g, '.');
+        }
+        rawValue = rawValue.replace(/x$/i, '');
+        const value = parseFloat(rawValue);
+        if (Number.isNaN(value) || value <= 0) {
+          return;
+        }
+
+        current.multipliers.push(value);
+
+        if (!current.startLabel) {
+          const firstCell = cells[0] || '';
+          const timestamp = firstCell.split(',')[0].trim();
+          if (timestamp) {
+            current.startLabel = timestamp;
+          } else {
+            const match = line.match(/\d{4}\/\d{2}\/\d{2}|\d{2}:\d{2}:\d{2}/);
+            if (match && match[0]) {
+              current.startLabel = match[0];
+            }
+          }
+        }
+      });
+
+      pushCurrent();
+
+      return sessions.map((session, index) => {
+        const base = `Session ${index + 1}`;
+        const detail = session.startLabel ? ` – ${session.startLabel}` : '';
+        return {
+          label: `${base}${detail}`,
+          header: session.header,
+          multipliers: session.multipliers,
+          startLabel: session.startLabel || '',
+        };
+      });
+    }
+
+    function clearPendingSessions() {
+      pendingCsvSessions = [];
+      pendingCsvFileName = '';
+      if (multipliersSessionsWrap) {
+        multipliersSessionsWrap.classList.add('hidden');
+      }
+      if (multipliersSessionList) {
+        multipliersSessionList.innerHTML = '';
+      }
+    }
+
+    function renderSessionChooser(sessions, fileName = '') {
+      if (!multipliersSessionsWrap || !multipliersSessionList) {
+        return;
       }
 
-      if (multiplierColumn === -1) {
-        return [];
-      }
+      multipliersSessionList.innerHTML = '';
 
-      const collected = [];
-      for (let i = headerIndex + 1; i < lines.length; i += 1) {
-        const rawLine = lines[i];
-        if (!rawLine) continue;
-        const cells = rawLine.split(';');
-        if (cells.length <= multiplierColumn) continue;
-        const rawValue = cells[multiplierColumn].trim();
-        if (!rawValue) continue;
-        let normalized = rawValue.replace(/^['"]+|['"]+$/g, '');
-        if (normalized.includes(',') && !normalized.includes('.')) {
-          normalized = normalized.replace(/,/g, '.');
-        }
-        normalized = normalized.replace(/x$/i, '');
-        const value = parseFloat(normalized);
-        if (!Number.isNaN(value) && value > 0) {
-          collected.push(value);
-        }
-      }
+      sessions.forEach((session, index) => {
+        const optionId = `multipliersSession-${index}`;
+        const wrapper = document.createElement('label');
+        wrapper.className = 'flex items-start gap-3 p-3 border border-slate-700 rounded-lg transition-colors duration-150 cursor-pointer hover:border-indigo-400';
+        wrapper.setAttribute('for', optionId);
 
-      return collected;
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'multipliersSession';
+        radio.value = index.toString();
+        radio.id = optionId;
+        radio.className = 'mt-1';
+        if (index === 0) {
+          radio.checked = true;
+        }
+
+        const content = document.createElement('div');
+        const title = document.createElement('p');
+        title.className = 'text-sm font-medium text-slate-100';
+        title.textContent = session.label || `Session ${index + 1}`;
+        const meta = document.createElement('p');
+        meta.className = 'text-xs text-slate-400';
+        const details = [];
+        details.push(`${session.multipliers.length} multipliers`);
+        if (session.startLabel) {
+          details.push(`starting ${session.startLabel}`);
+        }
+        if (fileName) {
+          details.push(fileName);
+        }
+        meta.textContent = details.join(' • ');
+
+        content.appendChild(title);
+        content.appendChild(meta);
+
+        wrapper.appendChild(radio);
+        wrapper.appendChild(content);
+
+        multipliersSessionList.appendChild(wrapper);
+      });
+
+      multipliersSessionsWrap.classList.remove('hidden');
     }
 
     function readFileAsText(file) {
@@ -208,6 +311,9 @@ function init() {
     function setMultipliers(newList, { keepRunningState = true } = {}) {
       const sanitized = newList.filter(num => Number.isFinite(num) && num > 0);
       multipliers = sanitized;
+      if (sanitized.length || !pendingCsvSessions.length) {
+        clearPendingSessions();
+      }
       syncMultipliersEditor();
 
       const hasMultipliers = multipliers.length > 0;
@@ -242,19 +348,34 @@ function init() {
 
       readFileAsText(file)
         .then((text) => {
-          const parsed = parseMultipliersFromCsv(text);
-          if (!parsed.length) {
+          const sessions = parseMultipliersFromCsv(text);
+          if (!sessions.length) {
+            clearPendingSessions();
             const message = 'No multipliers were found in that CSV file.';
             showMultipliersFeedback(message, 'error');
             statusMessage(message);
             return;
           }
-          const result = setMultipliers(parsed, { keepRunningState: true });
-          const message = `Imported ${result.count} multipliers from ${file.name || 'CSV file'}.`;
+
+          if (sessions.length === 1) {
+            const session = sessions[0];
+            const result = setMultipliers(session.multipliers, { keepRunningState: true });
+            const sessionLabel = session.label ? ` (${session.label})` : '';
+            const message = `Imported ${result.count} multipliers from ${file.name || 'CSV file'}${sessionLabel}.`;
+            showMultipliersFeedback(message, 'success');
+            statusMessage(message);
+            return;
+          }
+
+          pendingCsvSessions = sessions;
+          pendingCsvFileName = file.name || 'CSV file';
+          renderSessionChooser(sessions, pendingCsvFileName);
+          const message = `Found ${sessions.length} sessions in ${pendingCsvFileName}. Select one to import.`;
           showMultipliersFeedback(message, 'success');
           statusMessage(message);
         })
         .catch(() => {
+          clearPendingSessions();
           const message = 'Could not read the CSV file. Please try again.';
           showMultipliersFeedback(message, 'error');
           statusMessage(message);
@@ -448,6 +569,9 @@ function init() {
     const multipliersPreview = document.getElementById('multipliersPreview');
     const multipliersDropZone = document.getElementById('multipliersDropZone');
     const multipliersFileInput = document.getElementById('multipliersFile');
+    const multipliersSessionsWrap = document.getElementById('multipliersSessions');
+    const multipliersSessionList = document.getElementById('multipliersSessionList');
+    const applyMultipliersSessionBtn = document.getElementById('applyMultipliersSession');
     const debugWrap = document.getElementById('debugWrap');
     const tabButtons = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab]') : []);
     const tabPanels = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab-panel]') : []);
@@ -1401,6 +1525,40 @@ function init() {
           importMultipliersFromFile(file);
         }
         multipliersFileInput.value = '';
+      });
+    }
+
+    if (applyMultipliersSessionBtn) {
+      applyMultipliersSessionBtn.addEventListener('click', () => {
+        if (!pendingCsvSessions.length) {
+          showMultipliersFeedback('Import a CSV file and select a session to continue.', 'error');
+          return;
+        }
+
+        const selected = multipliersSessionList
+          ? multipliersSessionList.querySelector('input[name="multipliersSession"]:checked')
+          : null;
+
+        if (!selected) {
+          showMultipliersFeedback('Please choose a session to import.', 'error');
+          return;
+        }
+
+        const idx = parseInt(selected.value, 10);
+        if (!Number.isInteger(idx) || !pendingCsvSessions[idx]) {
+          showMultipliersFeedback('Please choose a valid session to import.', 'error');
+          return;
+        }
+
+        const chosen = pendingCsvSessions[idx];
+        const fileLabel = pendingCsvFileName || 'CSV file';
+        const sessionLabel = chosen.label || `Session ${idx + 1}`;
+        const result = setMultipliers(chosen.multipliers, { keepRunningState: true });
+        const message = result.type === 'success'
+          ? `Imported ${result.count} multipliers from ${sessionLabel} in ${fileLabel}.`
+          : result.message;
+        showMultipliersFeedback(message, result.type === 'success' ? 'success' : 'error');
+        statusMessage(message);
       });
     }
 

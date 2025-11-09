@@ -82,6 +82,73 @@ function init() {
         .filter(num => !Number.isNaN(num) && num > 0);
     }
 
+    function parseMultipliersFromCsv(content) {
+      if (typeof content !== 'string' || !content.trim()) {
+        return [];
+      }
+
+      const lines = content
+        .replace(/\r\n?/g, '\n')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+
+      let headerIndex = -1;
+      let multiplierColumn = -1;
+
+      for (let i = 0; i < lines.length; i += 1) {
+        const cells = lines[i].split(';').map(cell => cell.trim());
+        const idx = cells.findIndex(cell => cell.toLowerCase() === 'multiplier');
+        if (idx !== -1) {
+          headerIndex = i;
+          multiplierColumn = idx;
+          break;
+        }
+      }
+
+      if (multiplierColumn === -1) {
+        return [];
+      }
+
+      const collected = [];
+      for (let i = headerIndex + 1; i < lines.length; i += 1) {
+        const rawLine = lines[i];
+        if (!rawLine) continue;
+        const cells = rawLine.split(';');
+        if (cells.length <= multiplierColumn) continue;
+        const rawValue = cells[multiplierColumn].trim();
+        if (!rawValue) continue;
+        let normalized = rawValue.replace(/^['"]+|['"]+$/g, '');
+        if (normalized.includes(',') && !normalized.includes('.')) {
+          normalized = normalized.replace(/,/g, '.');
+        }
+        normalized = normalized.replace(/x$/i, '');
+        const value = parseFloat(normalized);
+        if (!Number.isNaN(value) && value > 0) {
+          collected.push(value);
+        }
+      }
+
+      return collected;
+    }
+
+    function readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        if (typeof FileReader === 'undefined') {
+          reject(new Error('FileReader is not supported'));
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve(typeof reader.result === 'string' ? reader.result : '');
+        };
+        reader.onerror = () => {
+          reject(reader.error);
+        };
+        reader.readAsText(file);
+      });
+    }
+
     function renderMultipliersPreview(list) {
       if (!multipliersPreview) return;
       multipliersPreview.innerHTML = '';
@@ -162,6 +229,44 @@ function init() {
 
       saveState();
       return { message, type: 'success', count: multipliers.length };
+    }
+
+    function importMultipliersFromFile(file) {
+      if (!file) {
+        return;
+      }
+
+      if (multipliersFeedback) {
+        multipliersFeedback.classList.add('hidden');
+      }
+
+      readFileAsText(file)
+        .then((text) => {
+          const parsed = parseMultipliersFromCsv(text);
+          if (!parsed.length) {
+            const message = 'No multipliers were found in that CSV file.';
+            showMultipliersFeedback(message, 'error');
+            statusMessage(message);
+            return;
+          }
+          const result = setMultipliers(parsed, { keepRunningState: true });
+          const message = `Imported ${result.count} multipliers from ${file.name || 'CSV file'}.`;
+          showMultipliersFeedback(message, 'success');
+          statusMessage(message);
+        })
+        .catch(() => {
+          const message = 'Could not read the CSV file. Please try again.';
+          showMultipliersFeedback(message, 'error');
+          statusMessage(message);
+        });
+    }
+
+    function setDropZoneActive(isActive) {
+      if (!multipliersDropZone) return;
+      multipliersDropZone.classList.toggle('border-indigo-400', isActive);
+      multipliersDropZone.classList.toggle('border-slate-600', !isActive);
+      multipliersDropZone.classList.toggle('bg-slate-900/60', isActive);
+      multipliersDropZone.classList.toggle('bg-slate-900/40', !isActive);
     }
 
     function activateTab(target) {
@@ -341,6 +446,8 @@ function init() {
     const multipliersFeedback = document.getElementById('multipliersFeedback');
     const multipliersCount = document.getElementById('multipliersCount');
     const multipliersPreview = document.getElementById('multipliersPreview');
+    const multipliersDropZone = document.getElementById('multipliersDropZone');
+    const multipliersFileInput = document.getElementById('multipliersFile');
     const debugWrap = document.getElementById('debugWrap');
     const tabButtons = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab]') : []);
     const tabPanels = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab-panel]') : []);
@@ -1253,6 +1360,47 @@ function init() {
           showMultipliersFeedback(result.message, 'error');
         }
         statusMessage(result.message);
+      });
+    }
+
+    if (multipliersDropZone) {
+      ['dragenter', 'dragover'].forEach((eventName) => {
+        multipliersDropZone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          setDropZoneActive(true);
+        });
+      });
+
+      ['dragleave', 'dragend'].forEach((eventName) => {
+        multipliersDropZone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          setDropZoneActive(false);
+        });
+      });
+
+      multipliersDropZone.addEventListener('drop', (event) => {
+        event.preventDefault();
+        setDropZoneActive(false);
+        const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+        if (file) {
+          importMultipliersFromFile(file);
+        }
+      });
+
+      multipliersDropZone.addEventListener('click', () => {
+        if (multipliersFileInput) {
+          multipliersFileInput.click();
+        }
+      });
+    }
+
+    if (multipliersFileInput) {
+      multipliersFileInput.addEventListener('change', () => {
+        const file = multipliersFileInput.files && multipliersFileInput.files[0];
+        if (file) {
+          importMultipliersFromFile(file);
+        }
+        multipliersFileInput.value = '';
       });
     }
 

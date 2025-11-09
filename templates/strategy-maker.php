@@ -104,6 +104,11 @@ if (!defined('ABSPATH')) {
           <button id="resetMultipliers" type="button" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Load sample multipliers</button>
           <span id="multipliersFeedback" class="text-xs text-emerald-400 hidden"></span>
         </div>
+        <div id="multipliersDropZone" class="mt-4 border-2 border-dashed border-slate-600 rounded-lg p-5 text-center transition-colors duration-150 cursor-pointer bg-slate-900/40 hover:border-indigo-400">
+          <input id="multipliersFile" type="file" accept=".csv" class="hidden" />
+          <p class="text-sm text-slate-200 font-medium">Drag &amp; drop a CSV export here, or click to browse.</p>
+          <p class="text-xs text-slate-400 mt-2">We will import the values from the <strong>Multiplier</strong> column automatically.</p>
+        </div>
         <div class="mt-4 text-xs text-slate-400">Active multipliers: <span id="multipliersCount">0</span></div>
         <div id="multipliersPreview" class="mt-2 flex flex-wrap gap-2"></div>
       </section>

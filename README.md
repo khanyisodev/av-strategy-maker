@@ -11,7 +11,7 @@ WordPress plugin that delivers a bankroll simulation dashboard alongside an inte
 
 - Strategy cards support dual bets, martingale sequences, trigger-based condition groups and risk controls, all adjustable through a responsive modal interface. Each trigger bundles AND conditions together, while adding another trigger gives you OR behaviour for scenarios such as <em>Prev Mult 2 &gt; 1.6</em> vs <em>Prev Mult 2 &lt; 1.6 AND Prev Mult 3 &gt; 1.6</em>.
 - The Chart.js canvas visualises the most recent multipliers while the toolbar provides controls for speed, window size (60, 120, 240 or all points), pausing and resetting the simulation that advances exactly as far as your multiplier list.
-- Multipliers can be edited from the modal’s new tab using comma- or newline-separated values (quotes optional) with the familiar trailing `x`, letting you rebuild the playback dataset without editing source files, and the values persist across sessions.
+- Multipliers can be edited from the modal’s tab using comma- or newline-separated values (quotes optional) with the familiar trailing `x`, or imported straight from a CSV export via drag-and-drop. The plugin pulls the values from the **Multiplier** column, persists them across sessions and restarts the simulator with the updated dataset.
 - Debug tab captures every simulated round per strategy, highlighting the multiplier processed, whether a bet fired, and the win/loss result so you can audit logic while the playback runs.
 - Pattern scanner includes timeframe filters, customisable occurrence targets and a diagnostics panel that runs automated tests to confirm the logic remains sound.
 - Assets are registered and enqueued only when needed to keep page loads lean and to make future overrides easy via filters.

@@ -1,5 +1,5 @@
 .card { transition: transform .2s ease, box-shadow .2s ease; }
-.card:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+.card:hover { transform: translateY(-2px); }
 .mono { font-variant-numeric: tabular-nums; }
 
 #lqd-site-content {

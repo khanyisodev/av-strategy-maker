@@ -277,11 +277,56 @@ function init() {
     let running = true;
     let interval = null;
 
+    function nonUserStrategies() {
+      return strategies.filter(st => !st.isUserGameplay);
+    }
+
+    function nextStrategyColor() {
+      const count = nonUserStrategies().length;
+      return COLOR_PALETTE[count % COLOR_PALETTE.length];
+    }
+
+    function strategyLabel(strat) {
+      if (strat.name) return strat.name;
+      const idx = nonUserStrategies().indexOf(strat);
+      return idx >= 0 ? `Strategy ${idx + 1}` : 'Strategy';
+    }
+
+    function createUserGameplayStrategy() {
+      const maxPoints = parseInt((windowEl && windowEl.value) || maxPointsDefault, 10);
+      return {
+        name: 'User Gameplay',
+        isUserGameplay: true,
+        mode: 'roi',
+        roiWindow: 50,
+        cashout: defaultCashout,
+        betAmount: INITIAL_BET,
+        show: true,
+        martingale: false,
+        sequence: [],
+        conditions: [],
+        risk: { enabled:false, rounds:0, resumeAbove:0, restart:'start' },
+        second: { enabled:false, amount:0, restart:'restart', lockRounds:0 },
+        bankroll: INITIAL_BANKROLL,
+        martiIdx: 0,
+        lossStreak: 0,
+        cooldown: false,
+        resumeHits: 0,
+        data: Array.from({ length: maxPoints }, () => INITIAL_BANKROLL),
+        color: '#f97316',
+        collapsed: false,
+        activeStrategyName: ''
+      };
+    }
+
     function defaultStrategy() {
-      const color = COLOR_PALETTE[strategies.length % COLOR_PALETTE.length];
+      const color = nextStrategyColor();
       const maxPoints = parseInt(windowEl.value, 10);
       return {
         name: '',
+        isUserGameplay: false,
+        mode: 'manual',
+        roiWindow: 0,
         cashout: defaultCashout,
         betAmount: INITIAL_BET,
         show: true,
@@ -305,8 +350,8 @@ function init() {
       const state = {
         speed: speedEl.value,
         window: windowEl.value,
-        strategies: strategies.map(({ name, cashout, betAmount, show, martingale, sequence, conditions, risk, second, color, collapsed }) => ({
-          name, cashout, betAmount, show, martingale, sequence, conditions, risk, second, color, collapsed
+        strategies: strategies.map(({ name, cashout, betAmount, show, martingale, sequence, conditions, risk, second, color, collapsed, isUserGameplay, mode, roiWindow }) => ({
+          name, cashout, betAmount, show, martingale, sequence, conditions, risk, second, color, collapsed, isUserGameplay, mode, roiWindow
         }))
       };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
@@ -321,28 +366,75 @@ function init() {
         if (state.window) windowEl.value = state.window;
         if (Array.isArray(state.strategies)) {
           strategies.splice(0, strategies.length);
+          const user = createUserGameplayStrategy();
+          strategies.push(user);
           state.strategies.forEach(saved => {
-            const base = defaultStrategy();
-            Object.assign(base, saved);
-            const maxPoints = parseInt(windowEl.value, 10);
-            base.bankroll = INITIAL_BANKROLL;
-            base.martiIdx = 0;
-            base.lossStreak = 0;
-            base.cooldown = false;
-            base.resumeHits = 0;
-            base.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
-            strategies.push(base);
+            if (saved && saved.isUserGameplay) {
+              Object.assign(user, saved);
+            } else {
+              const base = defaultStrategy();
+              Object.assign(base, saved);
+              const maxPoints = parseInt(windowEl.value, 10);
+              base.bankroll = INITIAL_BANKROLL;
+              base.martiIdx = 0;
+              base.lossStreak = 0;
+              base.cooldown = false;
+              base.resumeHits = 0;
+              base.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+              strategies.push(base);
+            }
           });
+          if (!strategies.find(st => st.isUserGameplay)) {
+            strategies.unshift(createUserGameplayStrategy());
+          }
         }
       } catch (e) {}
     }
 
+    if (!strategies.find(st => st.isUserGameplay)) {
+      strategies.push(createUserGameplayStrategy());
+    }
+
     loadState();
+
+    if (!strategies.find(st => st.isUserGameplay)) {
+      strategies.unshift(createUserGameplayStrategy());
+    }
     renderStrategies();
     syncChartDatasets();
 
     function renderStrategies() {
+      let ordinal = 0;
       strategiesWrap.innerHTML = strategies.map((s,i) => {
+        if (s.isUserGameplay) {
+          const statusText = getUserStrategyStatusText(s);
+          return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${i}" data-user="true">
+            <div class="flex justify-between items-center">
+              <button type="button" data-action="toggle" class="text-sm font-medium text-slate-100 text-left flex-1">${s.name}</button>
+              <label class="flex items-center gap-1 text-xs text-slate-200 mr-2"><input type="checkbox" data-field="show" ${s.show?'checked':''}/>Show</label>
+            </div>
+            <div class="mt-2 space-y-3 ${s.collapsed?'hidden':''}" data-fields>
+              <label class="flex items-center gap-2 text-sm text-slate-200">Color
+                <input type="color" data-field="color" value="${s.color}" class="bg-slate-900 border border-slate-600 rounded" />
+              </label>
+              <div class="space-y-1">
+                <div class="text-sm text-slate-200 font-medium">Selection mode</div>
+                <label class="flex items-center gap-2 text-sm text-slate-200"><input type="radio" name="user-mode" value="roi" data-field="mode" ${s.mode==='roi'?'checked':''}/> ROI</label>
+                <div class="ml-5 text-xs text-slate-400">Mirror the strategy with the highest ROI over the configured lookback window.</div>
+                <label class="flex items-center gap-2 text-sm text-slate-200"><input type="radio" name="user-mode" value="bankroll" data-field="mode" ${s.mode==='bankroll'?'checked':''}/> Top Performing Strategy</label>
+                <div class="ml-5 text-xs text-slate-400">Mirror the strategy that currently has the highest bankroll.</div>
+              </div>
+              <div class="${s.mode==='roi'?'':'hidden'} space-y-1" data-user-roi>
+                <label class="flex items-center gap-2 text-sm text-slate-200">Lookback rounds
+                  <input type="number" min="1" step="1" data-field="roiWindow" value="${s.roiWindow}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
+                </label>
+                <p class="text-xs text-slate-400">Only strategies with at least this many recorded rounds will be considered.</p>
+              </div>
+              <p class="text-xs text-slate-300" data-user-status>${statusText}</p>
+            </div>
+          </div>`;
+        }
+        ordinal += 1;
         const condRows = s.conditions.map((c,j)=>`
           <div class="flex items-center gap-2 mb-1" data-cond="${j}">
             ${j>0?`<select data-field="logic" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
@@ -365,7 +457,7 @@ function init() {
           </div>`).join('');
         return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${i}">
           <div class="flex justify-between items-center">
-            <button type="button" data-action="toggle" class="text-sm font-medium text-slate-100 text-left flex-1">Strategy ${i+1}${s.name?`: ${s.name}`:''}</button>
+            <button type="button" data-action="toggle" class="text-sm font-medium text-slate-100 text-left flex-1">Strategy ${ordinal}${s.name?`: ${s.name}`:''}</button>
             <label class="flex items-center gap-1 text-xs text-slate-200 mr-2"><input type="checkbox" data-field="show" ${s.show?'checked':''}/>Show</label>
             <div class="flex items-center gap-2">
               <button type="button" data-action="duplicate" class="text-indigo-400 text-xs">Duplicate</button>
@@ -396,6 +488,53 @@ function init() {
           </div>
         </div>`;
       }).join('');
+      updateUserStrategyStatus();
+    }
+
+    function getUserStrategyStatusText(user) {
+      if (!user.activeStrategyName) {
+        return 'No eligible strategies are currently being mirrored.';
+      }
+      return `Currently mirroring: ${user.activeStrategyName}`;
+    }
+
+    function updateUserStrategyStatus() {
+      const user = strategies.find(st => st.isUserGameplay);
+      if (!user) return;
+      if (!strategiesWrap) return;
+      const el = strategiesWrap.querySelector('[data-user-status]');
+      if (!el) return;
+      el.textContent = getUserStrategyStatusText(user);
+    }
+
+    function selectMirroredStrategy(user) {
+      const candidates = nonUserStrategies().filter(st => st.show);
+      if (!candidates.length) return null;
+      if (user.mode === 'bankroll') {
+        return candidates.reduce((best, strat) => (
+          !best || strat.bankroll > best.bankroll ? strat : best
+        ), null);
+      }
+      const lookback = Math.max(1, user.roiWindow || 1);
+      let chosen = null;
+      let bestRoi = -Infinity;
+      candidates.forEach(strat => {
+        const data = strat.data;
+        if (!Array.isArray(data) || data.length < 2) return;
+        const end = data[data.length - 1];
+        const startIdx = Math.max(0, data.length - 1 - lookback);
+        const start = data[startIdx];
+        if (!start) return;
+        const roi = (end - start) / start;
+        if (roi > bestRoi) {
+          bestRoi = roi;
+          chosen = strat;
+        }
+      });
+      if (chosen) return chosen;
+      return candidates.reduce((best, strat) => (
+        !best || strat.bankroll > best.bankroll ? strat : best
+      ), null);
     }
 
     strategiesWrap.addEventListener('input', (e) => {
@@ -405,6 +544,18 @@ function init() {
       const field = e.target.dataset.field;
       switch (field) {
         case 'show': s.show = e.target.checked; syncChartDatasets(); break;
+        case 'color': s.color = e.target.value || s.color; syncChartDatasets(); break;
+        case 'mode':
+          if (s.isUserGameplay) {
+            s.mode = e.target.value === 'bankroll' ? 'bankroll' : 'roi';
+            renderStrategies();
+          }
+          break;
+        case 'roiWindow':
+          if (s.isUserGameplay) {
+            s.roiWindow = Math.max(1, parseInt(e.target.value, 10) || s.roiWindow || 1);
+          }
+          break;
         case 'name': s.name = e.target.value; syncChartDatasets(); break;
         case 'cashout': s.cashout = parseFloat(e.target.value) || s.cashout; break;
         case 'betAmount': s.betAmount = parseFloat(e.target.value) || s.betAmount; break;
@@ -431,10 +582,18 @@ function init() {
       if (idx === undefined) return;
       const s = strategies[idx];
       const action = e.target.dataset.action;
+      if (s.isUserGameplay) {
+        if (action === 'toggle') {
+          s.collapsed = !s.collapsed;
+          renderStrategies();
+        }
+        saveState();
+        return;
+      }
       if (action === 'remove') { strategies.splice(idx,1); renderStrategies(); syncChartDatasets(); }
       if (action === 'duplicate') {
         const clone = JSON.parse(JSON.stringify(s));
-        clone.color = COLOR_PALETTE[strategies.length % COLOR_PALETTE.length];
+        clone.color = nextStrategyColor();
         const maxPoints = parseInt(windowEl.value, 10);
         clone.bankroll = INITIAL_BANKROLL;
         clone.martiIdx = 0;
@@ -537,14 +696,40 @@ function init() {
       renderLastMultipliers(usedMultipliers);
 
       strategies.forEach(s => {
+        let config = s;
+        let riskConfig = s.risk || { enabled:false, rounds:0, resumeAbove:0, restart:'start' };
+        let sequence = Array.isArray(s.sequence) ? s.sequence : [];
+        let martingaleActive = s.martingale && sequence.length > 0;
+
+        if (s.isUserGameplay) {
+          const target = selectMirroredStrategy(s);
+          const label = target ? strategyLabel(target) : '';
+          s.activeStrategyName = label;
+          if (!target) {
+            s.data.push(s.bankroll);
+            if (s.data.length > labels.length) s.data.shift();
+            return;
+          }
+          config = target;
+          sequence = Array.isArray(config.sequence) ? config.sequence : [];
+          martingaleActive = config.martingale && sequence.length > 0;
+          riskConfig = config.risk || { enabled:false, rounds:0, resumeAbove:0, restart:'start' };
+          s.cashout = config.cashout;
+          s.betAmount = config.betAmount;
+          if (martingaleActive && s.martiIdx >= sequence.length) {
+            s.martiIdx = sequence.length - 1;
+          }
+          if (s.martiIdx < 0) s.martiIdx = 0;
+        }
+
         if (s.cooldown) {
-          if (currMult >= s.cashout) {
+          if (currMult >= config.cashout) {
             s.resumeHits++;
-            if (s.resumeHits >= s.risk.resumeAbove) {
+            if (s.resumeHits >= (riskConfig.resumeAbove || 0)) {
               s.cooldown = false;
               s.resumeHits = 0;
               s.lossStreak = 0;
-              if (s.risk.restart === 'start') s.martiIdx = 0;
+              if ((riskConfig.restart || 'start') === 'start') s.martiIdx = 0;
             }
           }
           s.data.push(s.bankroll);
@@ -552,19 +737,19 @@ function init() {
           return;
         }
 
-        const shouldBet = evaluateConditions(s.conditions, usedMultipliers);
+        const shouldBet = evaluateConditions(config.conditions, usedMultipliers);
         if (shouldBet) {
-          const seqMul = s.martingale && s.sequence.length ? (s.sequence[s.martiIdx] || 1) : 1;
-          const bet = s.betAmount * seqMul;
-          if (currMult >= s.cashout) {
-            s.bankroll += bet * (s.cashout - 1);
+          const seqMul = martingaleActive ? (sequence[s.martiIdx] || 1) : 1;
+          const bet = config.betAmount * seqMul;
+          if (currMult >= config.cashout) {
+            s.bankroll += bet * (config.cashout - 1);
             s.martiIdx = 0;
             s.lossStreak = 0;
           } else {
             s.bankroll -= bet;
-            if (s.martingale && s.martiIdx < s.sequence.length - 1) s.martiIdx++;
+            if (martingaleActive && s.martiIdx < sequence.length - 1) s.martiIdx++;
             s.lossStreak++;
-            if (s.risk.enabled && s.risk.rounds > 0 && s.lossStreak >= s.risk.rounds) {
+            if (riskConfig.enabled && riskConfig.rounds > 0 && s.lossStreak >= riskConfig.rounds) {
               s.cooldown = true;
               s.resumeHits = 0;
             }
@@ -577,6 +762,7 @@ function init() {
       labels.push(tick++);
       clampWindow();
       syncChartDatasets();
+      updateUserStrategyStatus();
 
       prevMult = currMult;
     }
@@ -613,9 +799,13 @@ function init() {
         s.cooldown = false;
         s.resumeHits = 0;
         s.data = Array.from({ length: maxPoints }, () => INITIAL_BANKROLL);
+        if (s.isUserGameplay) {
+          s.activeStrategyName = '';
+        }
       });
       renderLastMultipliers([]);
       syncChartDatasets();
+      updateUserStrategyStatus();
       chart.update();
 
       if (!running) { running = true; btnToggle.textContent = 'Pause'; }

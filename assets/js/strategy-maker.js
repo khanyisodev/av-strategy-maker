@@ -315,10 +315,10 @@ function init() {
       }, 2400);
     }
 
-    function setMultipliers(newList, { keepRunningState = true } = {}) {
+    function setMultipliers(newList, { keepRunningState = true, clearSessions = true } = {}) {
       const sanitized = newList.filter(num => Number.isFinite(num) && num > 0);
       multipliers = sanitized;
-      if (sanitized.length || !pendingCsvSessions.length) {
+      if (clearSessions && (sanitized.length || !pendingCsvSessions.length)) {
         clearPendingSessions();
       }
       syncMultipliersEditor();
@@ -1563,7 +1563,7 @@ function init() {
         const chosen = pendingCsvSessions[idx];
         const fileLabel = pendingCsvFileName || 'CSV file';
         const sessionLabel = chosen.label || `Session ${idx + 1}`;
-        const result = setMultipliers(chosen.multipliers, { keepRunningState: true });
+        const result = setMultipliers(chosen.multipliers, { keepRunningState: true, clearSessions: false });
         const message = result.type === 'success'
           ? `Imported ${result.count} multipliers from ${sessionLabel} in ${fileLabel}.`
           : result.message;

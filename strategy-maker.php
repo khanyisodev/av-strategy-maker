@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       AV Strategy Maker
  * Description:       Bankroll simulation and multiplier pattern analysis tools via shortcodes.
- * Version:           1.1.0
+ * Version:           1.2.15
  * Author:            AV
  * Text Domain:       av-strategy-maker
  * Requires at least: 6.0

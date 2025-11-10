@@ -111,7 +111,11 @@ if (!defined('ABSPATH')) {
         </div>
         <div id="multipliersSessions" class="mt-4 hidden">
           <p class="text-sm text-slate-300">Multiple sessions detected. Choose the one you want to import.</p>
-          <div id="multipliersSessionList" class="mt-3 space-y-2"></div>
+          <div class="mt-3 space-y-2">
+            <label for="multipliersSessionSelect" class="block text-xs font-medium uppercase tracking-wide text-slate-400">Session</label>
+            <select id="multipliersSessionSelect" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"></select>
+            <p id="multipliersSessionDetails" class="text-xs text-slate-400 hidden"></p>
+          </div>
           <button id="applyMultipliersSession" type="button" class="mt-3 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm">Use selected session</button>
         </div>
         <div class="mt-4 text-xs text-slate-400">Active multipliers: <span id="multipliersCount">0</span></div>

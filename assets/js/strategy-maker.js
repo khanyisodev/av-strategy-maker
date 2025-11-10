@@ -179,60 +179,67 @@ function init() {
       if (multipliersSessionsWrap) {
         multipliersSessionsWrap.classList.add('hidden');
       }
-      if (multipliersSessionList) {
-        multipliersSessionList.innerHTML = '';
+      if (multipliersSessionSelect) {
+        multipliersSessionSelect.innerHTML = '';
+        multipliersSessionSelect.value = '';
+      }
+      if (multipliersSessionDetails) {
+        multipliersSessionDetails.textContent = '';
+        multipliersSessionDetails.classList.add('hidden');
       }
     }
 
-    function renderSessionChooser(sessions, fileName = '') {
-      if (!multipliersSessionsWrap || !multipliersSessionList) {
+    function updateSessionDetailText() {
+      if (!multipliersSessionDetails) {
         return;
       }
 
-      multipliersSessionList.innerHTML = '';
+      if (!multipliersSessionSelect || !multipliersSessionSelect.value) {
+        multipliersSessionDetails.textContent = '';
+        multipliersSessionDetails.classList.add('hidden');
+        return;
+      }
+
+      const idx = parseInt(multipliersSessionSelect.value, 10);
+      if (!Number.isInteger(idx) || !pendingCsvSessions[idx]) {
+        multipliersSessionDetails.textContent = '';
+        multipliersSessionDetails.classList.add('hidden');
+        return;
+      }
+
+      const session = pendingCsvSessions[idx];
+      const details = [`${session.multipliers.length} multipliers`];
+      if (session.startLabel) {
+        details.push(`starting ${session.startLabel}`);
+      }
+      if (pendingCsvFileName) {
+        details.push(pendingCsvFileName);
+      }
+
+      multipliersSessionDetails.textContent = details.join(' • ');
+      multipliersSessionDetails.classList.remove('hidden');
+    }
+
+    function renderSessionChooser(sessions) {
+      if (!multipliersSessionsWrap || !multipliersSessionSelect) {
+        return;
+      }
+
+      multipliersSessionSelect.innerHTML = '';
 
       sessions.forEach((session, index) => {
-        const optionId = `multipliersSession-${index}`;
-        const wrapper = document.createElement('label');
-        wrapper.className = 'flex items-start gap-3 p-3 border border-slate-700 rounded-lg transition-colors duration-150 cursor-pointer hover:border-indigo-400';
-        wrapper.setAttribute('for', optionId);
-
-        const radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = 'multipliersSession';
-        radio.value = index.toString();
-        radio.id = optionId;
-        radio.className = 'mt-1';
-        if (index === 0) {
-          radio.checked = true;
-        }
-
-        const content = document.createElement('div');
-        const title = document.createElement('p');
-        title.className = 'text-sm font-medium text-slate-100';
-        title.textContent = session.label || `Session ${index + 1}`;
-        const meta = document.createElement('p');
-        meta.className = 'text-xs text-slate-400';
-        const details = [];
-        details.push(`${session.multipliers.length} multipliers`);
-        if (session.startLabel) {
-          details.push(`starting ${session.startLabel}`);
-        }
-        if (fileName) {
-          details.push(fileName);
-        }
-        meta.textContent = details.join(' • ');
-
-        content.appendChild(title);
-        content.appendChild(meta);
-
-        wrapper.appendChild(radio);
-        wrapper.appendChild(content);
-
-        multipliersSessionList.appendChild(wrapper);
+        const option = document.createElement('option');
+        option.value = index.toString();
+        option.textContent = session.label || `Session ${index + 1}`;
+        multipliersSessionSelect.appendChild(option);
       });
 
+      if (sessions.length) {
+        multipliersSessionSelect.value = '0';
+      }
+
       multipliersSessionsWrap.classList.remove('hidden');
+      updateSessionDetailText();
     }
 
     function readFileAsText(file) {
@@ -369,7 +376,7 @@ function init() {
 
           pendingCsvSessions = sessions;
           pendingCsvFileName = file.name || 'CSV file';
-          renderSessionChooser(sessions, pendingCsvFileName);
+          renderSessionChooser(sessions);
           const message = `Found ${sessions.length} sessions in ${pendingCsvFileName}. Select one to import.`;
           showMultipliersFeedback(message, 'success');
           statusMessage(message);
@@ -570,7 +577,8 @@ function init() {
     const multipliersDropZone = document.getElementById('multipliersDropZone');
     const multipliersFileInput = document.getElementById('multipliersFile');
     const multipliersSessionsWrap = document.getElementById('multipliersSessions');
-    const multipliersSessionList = document.getElementById('multipliersSessionList');
+    const multipliersSessionSelect = document.getElementById('multipliersSessionSelect');
+    const multipliersSessionDetails = document.getElementById('multipliersSessionDetails');
     const applyMultipliersSessionBtn = document.getElementById('applyMultipliersSession');
     const debugWrap = document.getElementById('debugWrap');
     const tabButtons = Array.from(settingsModal ? settingsModal.querySelectorAll('[data-tab]') : []);
@@ -1528,6 +1536,12 @@ function init() {
       });
     }
 
+    if (multipliersSessionSelect) {
+      multipliersSessionSelect.addEventListener('change', () => {
+        updateSessionDetailText();
+      });
+    }
+
     if (applyMultipliersSessionBtn) {
       applyMultipliersSessionBtn.addEventListener('click', () => {
         if (!pendingCsvSessions.length) {
@@ -1535,16 +1549,12 @@ function init() {
           return;
         }
 
-        const selected = multipliersSessionList
-          ? multipliersSessionList.querySelector('input[name="multipliersSession"]:checked')
-          : null;
-
-        if (!selected) {
+        if (!multipliersSessionSelect || !multipliersSessionSelect.value) {
           showMultipliersFeedback('Please choose a session to import.', 'error');
           return;
         }
 
-        const idx = parseInt(selected.value, 10);
+        const idx = parseInt(multipliersSessionSelect.value, 10);
         if (!Number.isInteger(idx) || !pendingCsvSessions[idx]) {
           showMultipliersFeedback('Please choose a valid session to import.', 'error');
           return;

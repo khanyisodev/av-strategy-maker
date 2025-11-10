@@ -5,3 +5,7 @@
 #lqd-site-content {
   background-color: #020617; /* slate-950 */
 }
+
+#strategy-maker-root h1 {
+    text-align: center !important;
+}

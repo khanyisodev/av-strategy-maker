@@ -439,59 +439,13 @@ function init() {
 
     const strategies = [];
 
-    function nonUserStrategies() {
-      return strategies.filter(strategy => !strategy.isUserGameplay);
-    }
-
-    function getUserStrategy() {
-      return strategies.find(strategy => strategy.isUserGameplay) || null;
-    }
-
     function strategyLabel(strategy) {
-      if (strategy.isUserGameplay) {
-        return strategy.name || 'User Gameplay';
-      }
       if (strategy.name) {
         return strategy.name;
       }
-      const pool = nonUserStrategies();
-      const index = pool.indexOf(strategy);
+      const index = strategies.indexOf(strategy);
       return index >= 0 ? `Strategy ${index + 1}` : 'Strategy';
     }
-
-    function createUserGameplayStrategy() {
-      const seriesLength = getInitialSeriesLength();
-      return {
-        name: 'User Gameplay',
-        isUserGameplay: true,
-        mode: 'roi',
-        roiWindow: 50,
-        cashout: defaultCashout,
-        betAmount: INITIAL_BET,
-        show: true,
-        martingale: false,
-        sequence: [],
-        triggers: [createTrigger()],
-        risk: { enabled:false, rounds:0, resumeAbove:0, restart:'start' },
-        second: { enabled:false, amount:0, restart:'restart', lockRounds:0 },
-        bankroll: INITIAL_BANKROLL,
-        martiIdx: 0,
-        lossStreak: 0,
-        cooldown: false,
-        resumeHits: 0,
-        data: Array.from({ length: seriesLength }, () => INITIAL_BANKROLL),
-        color: '#f97316',
-        collapsed: false,
-        debug: {
-          rounds: [],
-          expanded: true,
-          selectedRound: null
-        },
-        activeStrategyName: ''
-      };
-    }
-
-    strategies.push(createUserGameplayStrategy());
 
     function createTrigger() {
       return { conditions: [] };
@@ -681,7 +635,6 @@ function init() {
       const seriesLength = getInitialSeriesLength();
       return {
         name: '',
-        isUserGameplay: false,
         cashout: defaultCashout,
         betAmount: INITIAL_BET,
         show: true,
@@ -755,7 +708,6 @@ function init() {
             : [];
           const serialized = {
             name: strategy.name,
-            isUserGameplay: !!strategy.isUserGameplay,
             cashout: strategy.cashout,
             betAmount: strategy.betAmount,
             show: strategy.show,
@@ -777,12 +729,6 @@ function init() {
             color: strategy.color,
             collapsed: strategy.collapsed
           };
-          if (strategy.isUserGameplay) {
-            serialized.mode = strategy.mode === 'bankroll' ? 'bankroll' : 'roi';
-            serialized.roiWindow = Number.isFinite(parseInt(strategy.roiWindow, 10))
-              ? parseInt(strategy.roiWindow, 10)
-              : 50;
-          }
           return serialized;
         }),
         multipliers
@@ -823,33 +769,16 @@ function init() {
             .map(value => parseFloat(value))
             .filter(num => !Number.isNaN(num) && num > 0);
         }
-        if (Array.isArray(state.strategies)) {
-          const restoredUser = createUserGameplayStrategy();
-          strategies.splice(0, strategies.length, restoredUser);
-          let userRestored = false;
+        if (Array.isArray(state.strategies) && state.strategies.length) {
+          strategies.splice(0, strategies.length);
 
           state.strategies.forEach(saved => {
-            if (saved && saved.isUserGameplay) {
-              userRestored = true;
-              restoredUser.show = saved.show !== false;
-              restoredUser.collapsed = !!saved.collapsed;
-              restoredUser.mode = saved.mode === 'bankroll' ? 'bankroll' : 'roi';
-              const parsedWindow = parseInt(saved.roiWindow, 10);
-              restoredUser.roiWindow = Number.isFinite(parsedWindow) && parsedWindow > 0 ? parsedWindow : restoredUser.roiWindow;
-              if (HEX_COLOR_REGEX.test(saved.color || '')) {
-                restoredUser.color = saved.color;
-              }
-              restoredUser.activeStrategyName = saved.activeStrategyName || '';
-              ensureStrategyDebug(restoredUser);
-              restoredUser.debug.rounds = [];
-              restoredUser.debug.selectedRound = null;
-              restoredUser.debug.expanded = true;
-              return;
-            }
-
             const base = defaultStrategy();
             Object.assign(base, saved);
-            base.isUserGameplay = false;
+            delete base.isUserGameplay;
+            delete base.mode;
+            delete base.roiWindow;
+            delete base.activeStrategyName;
             if (!HEX_COLOR_REGEX.test(base.color || '')) {
               base.color = randomStrategyColor(strategies.map(st => st.color));
             }
@@ -868,10 +797,13 @@ function init() {
             delete base.conditions;
             strategies.push(base);
           });
+        }
 
-          if (!userRestored) {
-            strategies[0] = createUserGameplayStrategy();
-          }
+        if (!strategies.length) {
+          const base = defaultStrategy();
+          ensureStrategyTriggers(base);
+          ensureStrategyDebug(base);
+          strategies.push(base);
         }
       } catch (e) {}
     }
@@ -913,20 +845,8 @@ function init() {
 
       debugWrap.innerHTML = visibleStrategies.map(({ strategy, index }) => {
         ensureStrategyDebug(strategy);
-        const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
-        let summary;
-        if (strategy.isUserGameplay) {
-          const lookback = Math.max(1, parseInt(strategy.roiWindow, 10) || 1);
-          const modeLabel = strategy.mode === 'bankroll'
-            ? 'Mode: Top Performing Strategy'
-            : `Mode: ROI (last ${lookback} rounds)`;
-          const mirrored = strategy.activeStrategyName
-            ? `Mirroring ${strategy.activeStrategyName}`
-            : 'No strategy currently selected';
-          summary = `${modeLabel} • ${mirrored}`;
-        } else {
-          summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;
-        }
+        const label = strategyLabel(strategy);
+        const summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;
         const rounds = strategy.debug.rounds;
         const feedbackMessage = strategy.debug.feedbackMessage;
         const feedbackTone = strategy.debug.feedbackTone === 'error' ? 'text-rose-400' : 'text-emerald-400';
@@ -996,67 +916,52 @@ function init() {
     function buildDebugExport(strategy, index) {
       ensureStrategyTriggers(strategy);
       ensureStrategyDebug(strategy);
-      const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
+      const label = strategyLabel(strategy);
       const lines = [];
       lines.push(`Strategy ${index + 1}: ${label}`);
       lines.push(`Color: ${strategy.color || 'N/A'}`);
 
-      if (strategy.isUserGameplay) {
-        const lookback = Math.max(1, parseInt(strategy.roiWindow, 10) || 1);
-        const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
-        const modeLabel = strategy.mode === 'bankroll'
-          ? 'Top Performing Strategy'
-          : `ROI (last ${lookback} rounds)`;
-        lines.push(`Mode: ${modeLabel}`);
-        lines.push(`Current mirror: ${strategy.activeStrategyName || 'None'}`);
-        lines.push(`Effective cashout target: ${cashoutLabel || 'N/A'}`);
-        lines.push(`Effective base bet: ${formatAmount(strategy.betAmount)}`);
-        lines.push('Mirrors the selected strategy’s martingale sequence, risk controls, and triggers.');
+      const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
+      lines.push(`Cashout target: ${cashoutLabel || 'N/A'}`);
+      lines.push(`Base bet amount: ${formatAmount(strategy.betAmount)}`);
+
+      const sequence = Array.isArray(strategy.sequence)
+        ? strategy.sequence.map(val => parseFloat(val)).filter(num => Number.isFinite(num))
+        : [];
+      if (strategy.martingale) {
+        if (sequence.length) {
+          lines.push(`Martingale: Enabled (sequence: ${sequence.map(num => formatAmount(num)).join(', ')})`);
+        } else {
+          lines.push('Martingale: Enabled (no sequence provided)');
+        }
       } else {
-        const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
-        lines.push(`Cashout target: ${cashoutLabel || 'N/A'}`);
-        lines.push(`Base bet amount: ${formatAmount(strategy.betAmount)}`);
+        lines.push('Martingale: Disabled');
+      }
 
-        const sequence = Array.isArray(strategy.sequence)
-          ? strategy.sequence.map(val => parseFloat(val)).filter(num => Number.isFinite(num))
-          : [];
-        if (strategy.martingale) {
-          if (sequence.length) {
-            lines.push(`Martingale: Enabled (sequence: ${sequence.map(num => formatAmount(num)).join(', ')})`);
-          } else {
-            lines.push('Martingale: Enabled (no sequence provided)');
-          }
-        } else {
-          lines.push('Martingale: Disabled');
-        }
+      const risk = strategy.risk || {};
+      if (risk.enabled) {
+        const rounds = Number.isFinite(risk.rounds) ? risk.rounds : 0;
+        const resumeAbove = Number.isFinite(risk.resumeAbove) ? risk.resumeAbove : 0;
+        const resumeRule = risk.restart === 'start' ? 'restart sequence on resume' : 'continue sequence on resume';
+        lines.push(`Risk controls: Enabled — stop after ${rounds} losses, resume after ${resumeAbove} hits ≥ cashout, ${resumeRule}`);
+      } else {
+        lines.push('Risk controls: Disabled');
+      }
 
-        const risk = strategy.risk || {};
-        if (risk.enabled) {
-          const rounds = Number.isFinite(risk.rounds) ? risk.rounds : 0;
-          const resumeAbove = Number.isFinite(risk.resumeAbove) ? risk.resumeAbove : 0;
-          const resumeRule = risk.restart === 'start' ? 'restart sequence on resume' : 'continue sequence on resume';
-          lines.push(`Risk controls: Enabled — stop after ${rounds} losses, resume after ${resumeAbove} hits ≥ cashout, ${resumeRule}`);
-        } else {
-          lines.push('Risk controls: Disabled');
-        }
-
-        const second = strategy.second || {};
-        if (second.enabled) {
-          const lockRounds = Number.isFinite(second.lockRounds) ? second.lockRounds : 0;
-          const restartLabel = second.restart === 'lock'
-            ? `lock for ${lockRounds} rounds after wins`
-            : 'restart after wins';
-          lines.push(`Second bet: Enabled — amount ${formatAmount(second.amount)} (${restartLabel})`);
-        } else {
-          lines.push('Second bet: Disabled');
-        }
+      const second = strategy.second || {};
+      if (second.enabled) {
+        const lockRounds = Number.isFinite(second.lockRounds) ? second.lockRounds : 0;
+        const restartLabel = second.restart === 'lock'
+          ? `lock for ${lockRounds} rounds after wins`
+          : 'restart after wins';
+        lines.push(`Second bet: Enabled — amount ${formatAmount(second.amount)} (${restartLabel})`);
+      } else {
+        lines.push('Second bet: Disabled');
       }
 
       lines.push('');
       lines.push('Triggers:');
-      if (strategy.isUserGameplay) {
-        lines.push('  (inherits triggers from the mirrored strategy)');
-      } else if (Array.isArray(strategy.triggers) && strategy.triggers.length) {
+      if (Array.isArray(strategy.triggers) && strategy.triggers.length) {
         strategy.triggers.forEach((trigger, tIndex) => {
           triggerToLines(trigger, tIndex).forEach(line => lines.push(line));
         });
@@ -1139,43 +1044,6 @@ function init() {
         ensureStrategyTriggers(strategy);
         ensureStrategyDebug(strategy);
 
-        if (strategy.isUserGameplay) {
-          const statusText = getUserStrategyStatusText(strategy);
-          const colorCode = (strategy.color || '').toUpperCase();
-          return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${index}" data-user="true">
-            <div class="flex justify-between items-center gap-3">
-              <div class="flex items-center gap-2 flex-1">
-                <span class="inline-flex size-3 rounded-full border border-slate-600" data-role="color-dot" style="background:${strategy.color};"></span>
-                <button type="button" data-action="toggle" class="text-sm font-semibold text-slate-100 text-left flex-1">${strategy.name}</button>
-              </div>
-              <label class="flex items-center gap-1 text-xs text-slate-200"><input type="checkbox" data-field="show" ${strategy.show ? 'checked' : ''}/>Show</label>
-            </div>
-            <div class="mt-2 space-y-3 ${strategy.collapsed ? 'hidden' : ''}" data-fields>
-              <div class="flex items-center gap-3">
-                <label class="flex items-center gap-2 text-sm text-slate-200">
-                  <span>Color</span>
-                  <input type="color" data-field="color" value="${strategy.color}" class="h-9 w-16 rounded border border-slate-600 bg-slate-900/40 cursor-pointer" />
-                </label>
-                <span class="text-xs text-slate-400 font-mono" data-role="color-code">${colorCode}</span>
-              </div>
-              <div class="space-y-1">
-                <div class="text-sm text-slate-200 font-medium">Selection mode</div>
-                <label class="flex items-center gap-2 text-sm text-slate-200"><input type="radio" name="user-mode" value="roi" data-field="mode" ${strategy.mode === 'roi' ? 'checked' : ''}/> ROI</label>
-                <div class="ml-5 text-xs text-slate-400">Mirror the strategy with the highest ROI over the configured lookback window.</div>
-                <label class="flex items-center gap-2 text-sm text-slate-200"><input type="radio" name="user-mode" value="bankroll" data-field="mode" ${strategy.mode === 'bankroll' ? 'checked' : ''}/> Top Performing Strategy</label>
-                <div class="ml-5 text-xs text-slate-400">Mirror the strategy that currently has the highest bankroll.</div>
-              </div>
-              <div class="${strategy.mode === 'roi' ? '' : 'hidden'} space-y-1" data-user-roi>
-                <label class="flex items-center gap-2 text-sm text-slate-200">Lookback rounds
-                  <input type="number" min="1" step="1" data-field="roiWindow" value="${strategy.roiWindow}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
-                </label>
-                <p class="text-xs text-slate-400">Only strategies with at least this many recorded rounds will be considered.</p>
-              </div>
-              <p class="text-xs text-slate-300" data-user-status>${statusText}</p>
-            </div>
-          </div>`;
-        }
-
         ordinal += 1;
 
         const triggerBlocks = strategy.triggers.map((trigger, triggerIndex) => {
@@ -1256,64 +1124,6 @@ function init() {
       }).join('');
 
       renderDebugPanel();
-      updateUserStrategyStatus();
-    }
-
-    function getUserStrategyStatusText(user) {
-      if (!user) {
-        return '';
-      }
-      if (!user.activeStrategyName) {
-        return 'No eligible strategies are currently being mirrored.';
-      }
-      return `Currently mirroring: ${user.activeStrategyName}`;
-    }
-
-    function updateUserStrategyStatus() {
-      const user = getUserStrategy();
-      if (!user || !strategiesWrap) return;
-      const statusNode = strategiesWrap.querySelector('[data-user-status]');
-      if (!statusNode) return;
-      statusNode.textContent = getUserStrategyStatusText(user);
-    }
-
-    function selectMirroredStrategy(user) {
-      const candidates = nonUserStrategies().filter(strat => strat.show);
-      if (!candidates.length) {
-        return null;
-      }
-
-      if (user.mode === 'bankroll') {
-        return candidates.reduce((best, strat) => (
-          !best || strat.bankroll > best.bankroll ? strat : best
-        ), null);
-      }
-
-      const lookback = Math.max(1, parseInt(user.roiWindow, 10) || 1);
-      let chosen = null;
-      let bestRoi = -Infinity;
-
-      candidates.forEach((strat) => {
-        const dataPoints = Array.isArray(strat.data) ? strat.data : [];
-        if (dataPoints.length < 2) return;
-        const end = dataPoints[dataPoints.length - 1];
-        const startIdx = Math.max(0, dataPoints.length - 1 - lookback);
-        const start = dataPoints[startIdx];
-        if (!Number.isFinite(start) || start <= 0) return;
-        const roi = (end - start) / start;
-        if (roi > bestRoi) {
-          bestRoi = roi;
-          chosen = strat;
-        }
-      });
-
-      if (chosen) {
-        return chosen;
-      }
-
-      return candidates.reduce((best, strat) => (
-        !best || strat.bankroll > best.bankroll ? strat : best
-      ), null);
     }
 
     strategiesWrap.addEventListener('input', (e) => {
@@ -1328,18 +1138,6 @@ function init() {
         case 'name': s.name = e.target.value; syncChartDatasets(); break;
         case 'cashout': s.cashout = parseFloat(e.target.value) || s.cashout; break;
         case 'betAmount': s.betAmount = parseFloat(e.target.value) || s.betAmount; break;
-        case 'mode':
-          if (s.isUserGameplay) {
-            s.mode = e.target.value === 'bankroll' ? 'bankroll' : 'roi';
-            renderStrategies();
-          }
-          break;
-        case 'roiWindow':
-          if (s.isUserGameplay) {
-            const parsed = parseInt(e.target.value, 10);
-            s.roiWindow = Number.isFinite(parsed) && parsed > 0 ? parsed : s.roiWindow;
-          }
-          break;
         case 'martingale': s.martingale = e.target.checked; renderStrategies(); break;
         case 'sequence': s.sequence = e.target.value.split(',').map(v=>parseFloat(v.trim())).filter(n=>!isNaN(n)); break;
         case 'color': {
@@ -1401,7 +1199,6 @@ function init() {
       }
       saveState();
       renderDebugPanel();
-      updateUserStrategyStatus();
     });
 
     strategiesWrap.addEventListener('click', (e) => {
@@ -1411,14 +1208,6 @@ function init() {
       ensureStrategyTriggers(s);
       ensureStrategyDebug(s);
       const action = e.target.dataset.action;
-      if (s.isUserGameplay) {
-        if (action === 'toggle') {
-          s.collapsed = !s.collapsed;
-          renderStrategies();
-        }
-        saveState();
-        return;
-      }
       if (action === 'remove') { strategies.splice(idx,1); renderStrategies(); syncChartDatasets(); }
       if (action === 'duplicate') {
         const clone = JSON.parse(JSON.stringify(s));
@@ -1474,7 +1263,6 @@ function init() {
       }
       saveState();
       renderDebugPanel();
-      updateUserStrategyStatus();
     });
 
     if (addStrategyBtn) {
@@ -1487,14 +1275,13 @@ function init() {
         strategies.push(ns);
         renderStrategies();
         syncChartDatasets();
-        updateUserStrategyStatus();
         saveState();
       });
     }
 
     function syncChartDatasets() {
       chart.data.datasets = strategies.filter(s=>s.show).map(s => ({
-        label: s.name || 'Strategy',
+        label: strategyLabel(s),
         data: s.data,
         borderColor: s.color,
         backgroundColor: hexToRgba(s.color, 0.15),
@@ -1565,41 +1352,10 @@ function init() {
       strategies.forEach((strategy) => {
         ensureStrategyDebug(strategy);
         const bankrollBefore = strategy.bankroll;
-        let target = null;
-        let triggersToEvaluate = Array.isArray(strategy.triggers) ? strategy.triggers : [];
-        let sequence = Array.isArray(strategy.sequence) ? strategy.sequence : [];
-        let martingaleEnabled = strategy.martingale && sequence.length > 0;
-        let activeRisk = normalizeRiskConfig(strategy.risk);
-
-        if (strategy.isUserGameplay) {
-          target = selectMirroredStrategy(strategy);
-          const label = target ? strategyLabel(target) : '';
-          strategy.activeStrategyName = label;
-          if (!target) {
-            strategy.data.push(strategy.bankroll);
-            if (strategy.data.length > labels.length) strategy.data.shift();
-            pushDebugRound(strategy, {
-              round: roundNumber,
-              multiplier: currMult,
-              decision: 'Skip',
-              outcome: 'No strategy selected',
-              bet: 0,
-              bankrollAfter: strategy.bankroll,
-              bankrollBefore,
-            });
-            return;
-          }
-          triggersToEvaluate = Array.isArray(target.triggers) ? target.triggers : [];
-          sequence = Array.isArray(target.sequence) ? target.sequence : [];
-          martingaleEnabled = target.martingale && sequence.length > 0;
-          activeRisk = normalizeRiskConfig(target.risk);
-          strategy.cashout = target.cashout;
-          strategy.betAmount = target.betAmount;
-          if (martingaleEnabled && strategy.martiIdx >= sequence.length) {
-            strategy.martiIdx = sequence.length - 1;
-          }
-          if (strategy.martiIdx < 0) strategy.martiIdx = 0;
-        }
+        const triggersToEvaluate = Array.isArray(strategy.triggers) ? strategy.triggers : [];
+        const sequence = Array.isArray(strategy.sequence) ? strategy.sequence : [];
+        const martingaleEnabled = strategy.martingale && sequence.length > 0;
+        const activeRisk = normalizeRiskConfig(strategy.risk);
 
         const shouldBet = evaluateTriggers(triggersToEvaluate, usedMultipliers);
         if (strategy.cooldown) {
@@ -1672,7 +1428,6 @@ function init() {
       syncChartDatasets();
 
       prevMult = currMult;
-      updateUserStrategyStatus();
       renderDebugPanel();
     }
 
@@ -1716,16 +1471,12 @@ function init() {
         ensureStrategyDebug(s);
         s.debug.rounds = [];
         s.debug.selectedRound = null;
-        if (s.isUserGameplay) {
-          s.activeStrategyName = '';
-        }
       });
 
       renderLastMultipliers([]);
       syncChartDatasets();
       chart.update();
       renderDebugPanel();
-      updateUserStrategyStatus();
 
       const hasMultipliers = multipliers.length > 0;
       const shouldRun = keepRunningState ? previousRunning : true;

@@ -34,6 +34,7 @@ if (!defined('ABSPATH')) {
             <option value="60">Last 60 pts</option>
             <option value="120" selected>Last 120 pts</option>
             <option value="240">Last 240 pts</option>
+            <option value="all">All</option>
           </select>
         </div>
 
@@ -89,6 +90,7 @@ if (!defined('ABSPATH')) {
       <div class="flex items-center gap-2 border-b border-slate-700 pb-3 mb-4" role="tablist" aria-label="Settings tabs">
         <button type="button" data-tab="strategies" class="settings-tab px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-150" aria-selected="true">Strategies</button>
         <button type="button" data-tab="multipliers" class="settings-tab px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-150 text-slate-400" aria-selected="false">Multipliers</button>
+        <button type="button" data-tab="debug" class="settings-tab px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-150 text-slate-400" aria-selected="false">Debug</button>
       </div>
       <section id="tabStrategies" data-tab-panel="strategies" class="space-y-4">
         <div id="strategiesWrap" class="space-y-4"></div>
@@ -102,8 +104,26 @@ if (!defined('ABSPATH')) {
           <button id="resetMultipliers" type="button" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm">Load sample multipliers</button>
           <span id="multipliersFeedback" class="text-xs text-emerald-400 hidden"></span>
         </div>
+        <div id="multipliersDropZone" class="mt-4 border-2 border-dashed border-slate-600 rounded-lg p-5 text-center transition-colors duration-150 cursor-pointer bg-slate-900/40 hover:border-indigo-400">
+          <input id="multipliersFile" type="file" accept=".csv" class="hidden" />
+          <p class="text-sm text-slate-200 font-medium">Drag &amp; drop a CSV export here, or click to browse.</p>
+          <p class="text-xs text-slate-400 mt-2">We will import the values from the <strong>Multiplier</strong> column automatically.</p>
+        </div>
+        <div id="multipliersSessions" class="mt-4 hidden">
+          <p class="text-sm text-slate-300">Multiple sessions detected. Choose the one you want to import.</p>
+          <div class="mt-3 space-y-2">
+            <label for="multipliersSessionSelect" class="block text-xs font-medium uppercase tracking-wide text-slate-400">Session</label>
+            <select id="multipliersSessionSelect" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"></select>
+            <p id="multipliersSessionDetails" class="text-xs text-slate-400 hidden"></p>
+          </div>
+          <button id="applyMultipliersSession" type="button" class="mt-3 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm">Use selected session</button>
+        </div>
         <div class="mt-4 text-xs text-slate-400">Active multipliers: <span id="multipliersCount">0</span></div>
         <div id="multipliersPreview" class="mt-2 flex flex-wrap gap-2"></div>
+      </section>
+      <section id="tabDebug" data-tab-panel="debug" class="hidden">
+        <p class="text-sm text-slate-300">Monitor the live decisions for each strategy. Click a strategy header to reveal its rounds, then click any round to highlight it.</p>
+        <div id="debugWrap" class="mt-3 space-y-3"></div>
       </section>
     </div>
   </div>

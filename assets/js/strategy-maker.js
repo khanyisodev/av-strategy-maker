@@ -162,10 +162,10 @@ function init() {
       pushCurrent();
 
       return sessions.map((session, index) => {
-        const base = `Session ${index + 1}`;
-        const detail = session.startLabel ? ` – ${session.startLabel}` : '';
+        const count = session.multipliers.length;
+        const suffix = count === 1 ? 'multiplier' : 'multipliers';
         return {
-          label: `${base}${detail}`,
+          label: `Session ${index + 1} - ${count} ${suffix}`,
           header: session.header,
           multipliers: session.multipliers,
           startLabel: session.startLabel || '',

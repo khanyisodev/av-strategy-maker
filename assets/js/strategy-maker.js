@@ -439,8 +439,71 @@ function init() {
 
     const strategies = [];
 
+    function nonUserStrategies() {
+      return strategies.filter(strategy => !strategy.isUserGameplay);
+    }
+
+    function getUserStrategy() {
+      return strategies.find(strategy => strategy.isUserGameplay) || null;
+    }
+
+    function strategyLabel(strategy) {
+      if (strategy.isUserGameplay) {
+        return strategy.name || 'User Gameplay';
+      }
+      if (strategy.name) {
+        return strategy.name;
+      }
+      const pool = nonUserStrategies();
+      const index = pool.indexOf(strategy);
+      return index >= 0 ? `Strategy ${index + 1}` : 'Strategy';
+    }
+
+    function createUserGameplayStrategy() {
+      const seriesLength = getInitialSeriesLength();
+      return {
+        name: 'User Gameplay',
+        isUserGameplay: true,
+        mode: 'roi',
+        roiWindow: 50,
+        cashout: defaultCashout,
+        betAmount: INITIAL_BET,
+        show: true,
+        martingale: false,
+        sequence: [],
+        triggers: [createTrigger()],
+        risk: { enabled:false, rounds:0, resumeAbove:0, restart:'start' },
+        second: { enabled:false, amount:0, restart:'restart', lockRounds:0 },
+        bankroll: INITIAL_BANKROLL,
+        martiIdx: 0,
+        lossStreak: 0,
+        cooldown: false,
+        resumeHits: 0,
+        data: Array.from({ length: seriesLength }, () => INITIAL_BANKROLL),
+        color: '#f97316',
+        collapsed: false,
+        debug: {
+          rounds: [],
+          expanded: true,
+          selectedRound: null
+        },
+        activeStrategyName: ''
+      };
+    }
+
+    strategies.push(createUserGameplayStrategy());
+
     function createTrigger() {
       return { conditions: [] };
+    }
+
+    function normalizeRiskConfig(risk) {
+      return {
+        enabled: !!(risk && risk.enabled),
+        rounds: Number.isFinite(risk?.rounds) ? risk.rounds : 0,
+        resumeAbove: Number.isFinite(risk?.resumeAbove) ? risk.resumeAbove : 0,
+        restart: risk?.restart === 'continue' ? 'continue' : 'start'
+      };
     }
 
     function normalizeCondition(raw) {
@@ -618,6 +681,7 @@ function init() {
       const seriesLength = getInitialSeriesLength();
       return {
         name: '',
+        isUserGameplay: false,
         cashout: defaultCashout,
         betAmount: INITIAL_BET,
         show: true,
@@ -685,29 +749,42 @@ function init() {
       const state = {
         speed: speedEl.value,
         window: windowEl.value,
-        strategies: strategies.map(({ name, cashout, betAmount, show, martingale, sequence, triggers, risk, second, color, collapsed }) => ({
-          name,
-          cashout,
-          betAmount,
-          show,
-          martingale,
-          sequence,
-          triggers: Array.isArray(triggers)
-            ? triggers.map(trigger => ({
-                conditions: Array.isArray(trigger.conditions)
-                  ? trigger.conditions.map(cond => ({
-                      pos: cond.pos,
-                      op: cond.op,
-                      value: cond.value,
-                    }))
-                  : []
-              }))
-            : [createTrigger()],
-          risk,
-          second,
-          color,
-          collapsed
-        })),
+        strategies: strategies.map((strategy) => {
+          const sequence = Array.isArray(strategy.sequence)
+            ? strategy.sequence.filter(val => Number.isFinite(parseFloat(val)))
+            : [];
+          const serialized = {
+            name: strategy.name,
+            isUserGameplay: !!strategy.isUserGameplay,
+            cashout: strategy.cashout,
+            betAmount: strategy.betAmount,
+            show: strategy.show,
+            martingale: strategy.martingale,
+            sequence,
+            triggers: Array.isArray(strategy.triggers)
+              ? strategy.triggers.map(trigger => ({
+                  conditions: Array.isArray(trigger.conditions)
+                    ? trigger.conditions.map(cond => ({
+                        pos: cond.pos,
+                        op: cond.op,
+                        value: cond.value,
+                      }))
+                    : []
+                }))
+              : [createTrigger()],
+            risk: strategy.risk,
+            second: strategy.second,
+            color: strategy.color,
+            collapsed: strategy.collapsed
+          };
+          if (strategy.isUserGameplay) {
+            serialized.mode = strategy.mode === 'bankroll' ? 'bankroll' : 'roi';
+            serialized.roiWindow = Number.isFinite(parseInt(strategy.roiWindow, 10))
+              ? parseInt(strategy.roiWindow, 10)
+              : 50;
+          }
+          return serialized;
+        }),
         multipliers
       };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
@@ -747,10 +824,32 @@ function init() {
             .filter(num => !Number.isNaN(num) && num > 0);
         }
         if (Array.isArray(state.strategies)) {
-          strategies.splice(0, strategies.length);
+          const restoredUser = createUserGameplayStrategy();
+          strategies.splice(0, strategies.length, restoredUser);
+          let userRestored = false;
+
           state.strategies.forEach(saved => {
+            if (saved && saved.isUserGameplay) {
+              userRestored = true;
+              restoredUser.show = saved.show !== false;
+              restoredUser.collapsed = !!saved.collapsed;
+              restoredUser.mode = saved.mode === 'bankroll' ? 'bankroll' : 'roi';
+              const parsedWindow = parseInt(saved.roiWindow, 10);
+              restoredUser.roiWindow = Number.isFinite(parsedWindow) && parsedWindow > 0 ? parsedWindow : restoredUser.roiWindow;
+              if (HEX_COLOR_REGEX.test(saved.color || '')) {
+                restoredUser.color = saved.color;
+              }
+              restoredUser.activeStrategyName = saved.activeStrategyName || '';
+              ensureStrategyDebug(restoredUser);
+              restoredUser.debug.rounds = [];
+              restoredUser.debug.selectedRound = null;
+              restoredUser.debug.expanded = true;
+              return;
+            }
+
             const base = defaultStrategy();
             Object.assign(base, saved);
+            base.isUserGameplay = false;
             if (!HEX_COLOR_REGEX.test(base.color || '')) {
               base.color = randomStrategyColor(strategies.map(st => st.color));
             }
@@ -769,6 +868,10 @@ function init() {
             delete base.conditions;
             strategies.push(base);
           });
+
+          if (!userRestored) {
+            strategies[0] = createUserGameplayStrategy();
+          }
         }
       } catch (e) {}
     }
@@ -811,7 +914,19 @@ function init() {
       debugWrap.innerHTML = visibleStrategies.map(({ strategy, index }) => {
         ensureStrategyDebug(strategy);
         const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
-        const summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;
+        let summary;
+        if (strategy.isUserGameplay) {
+          const lookback = Math.max(1, parseInt(strategy.roiWindow, 10) || 1);
+          const modeLabel = strategy.mode === 'bankroll'
+            ? 'Mode: Top Performing Strategy'
+            : `Mode: ROI (last ${lookback} rounds)`;
+          const mirrored = strategy.activeStrategyName
+            ? `Mirroring ${strategy.activeStrategyName}`
+            : 'No strategy currently selected';
+          summary = `${modeLabel} • ${mirrored}`;
+        } else {
+          summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;
+        }
         const rounds = strategy.debug.rounds;
         const feedbackMessage = strategy.debug.feedbackMessage;
         const feedbackTone = strategy.debug.feedbackTone === 'error' ? 'text-rose-400' : 'text-emerald-400';
@@ -877,6 +992,7 @@ function init() {
       return [header, ...lines];
     }
 
+
     function buildDebugExport(strategy, index) {
       ensureStrategyTriggers(strategy);
       ensureStrategyDebug(strategy);
@@ -884,47 +1000,63 @@ function init() {
       const lines = [];
       lines.push(`Strategy ${index + 1}: ${label}`);
       lines.push(`Color: ${strategy.color || 'N/A'}`);
-      const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
-      lines.push(`Cashout target: ${cashoutLabel || 'N/A'}`);
-      lines.push(`Base bet amount: ${formatAmount(strategy.betAmount)}`);
 
-      const sequence = Array.isArray(strategy.sequence)
-        ? strategy.sequence.map(val => parseFloat(val)).filter(num => Number.isFinite(num))
-        : [];
-      if (strategy.martingale) {
-        if (sequence.length) {
-          lines.push(`Martingale: Enabled (sequence: ${sequence.map(num => formatAmount(num)).join(', ')})`);
+      if (strategy.isUserGameplay) {
+        const lookback = Math.max(1, parseInt(strategy.roiWindow, 10) || 1);
+        const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
+        const modeLabel = strategy.mode === 'bankroll'
+          ? 'Top Performing Strategy'
+          : `ROI (last ${lookback} rounds)`;
+        lines.push(`Mode: ${modeLabel}`);
+        lines.push(`Current mirror: ${strategy.activeStrategyName || 'None'}`);
+        lines.push(`Effective cashout target: ${cashoutLabel || 'N/A'}`);
+        lines.push(`Effective base bet: ${formatAmount(strategy.betAmount)}`);
+        lines.push('Mirrors the selected strategy’s martingale sequence, risk controls, and triggers.');
+      } else {
+        const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
+        lines.push(`Cashout target: ${cashoutLabel || 'N/A'}`);
+        lines.push(`Base bet amount: ${formatAmount(strategy.betAmount)}`);
+
+        const sequence = Array.isArray(strategy.sequence)
+          ? strategy.sequence.map(val => parseFloat(val)).filter(num => Number.isFinite(num))
+          : [];
+        if (strategy.martingale) {
+          if (sequence.length) {
+            lines.push(`Martingale: Enabled (sequence: ${sequence.map(num => formatAmount(num)).join(', ')})`);
+          } else {
+            lines.push('Martingale: Enabled (no sequence provided)');
+          }
         } else {
-          lines.push('Martingale: Enabled (no sequence provided)');
+          lines.push('Martingale: Disabled');
         }
-      } else {
-        lines.push('Martingale: Disabled');
-      }
 
-      const risk = strategy.risk || {};
-      if (risk.enabled) {
-        const rounds = Number.isFinite(risk.rounds) ? risk.rounds : 0;
-        const resumeAbove = Number.isFinite(risk.resumeAbove) ? risk.resumeAbove : 0;
-        const resumeRule = risk.restart === 'start' ? 'restart sequence on resume' : 'continue sequence on resume';
-        lines.push(`Risk controls: Enabled — stop after ${rounds} losses, resume after ${resumeAbove} hits ≥ cashout, ${resumeRule}`);
-      } else {
-        lines.push('Risk controls: Disabled');
-      }
+        const risk = strategy.risk || {};
+        if (risk.enabled) {
+          const rounds = Number.isFinite(risk.rounds) ? risk.rounds : 0;
+          const resumeAbove = Number.isFinite(risk.resumeAbove) ? risk.resumeAbove : 0;
+          const resumeRule = risk.restart === 'start' ? 'restart sequence on resume' : 'continue sequence on resume';
+          lines.push(`Risk controls: Enabled — stop after ${rounds} losses, resume after ${resumeAbove} hits ≥ cashout, ${resumeRule}`);
+        } else {
+          lines.push('Risk controls: Disabled');
+        }
 
-      const second = strategy.second || {};
-      if (second.enabled) {
-        const lockRounds = Number.isFinite(second.lockRounds) ? second.lockRounds : 0;
-        const restartLabel = second.restart === 'lock'
-          ? `lock for ${lockRounds} rounds after wins`
-          : 'restart after wins';
-        lines.push(`Second bet: Enabled — amount ${formatAmount(second.amount)} (${restartLabel})`);
-      } else {
-        lines.push('Second bet: Disabled');
+        const second = strategy.second || {};
+        if (second.enabled) {
+          const lockRounds = Number.isFinite(second.lockRounds) ? second.lockRounds : 0;
+          const restartLabel = second.restart === 'lock'
+            ? `lock for ${lockRounds} rounds after wins`
+            : 'restart after wins';
+          lines.push(`Second bet: Enabled — amount ${formatAmount(second.amount)} (${restartLabel})`);
+        } else {
+          lines.push('Second bet: Disabled');
+        }
       }
 
       lines.push('');
       lines.push('Triggers:');
-      if (Array.isArray(strategy.triggers) && strategy.triggers.length) {
+      if (strategy.isUserGameplay) {
+        lines.push('  (inherits triggers from the mirrored strategy)');
+      } else if (Array.isArray(strategy.triggers) && strategy.triggers.length) {
         strategy.triggers.forEach((trigger, tIndex) => {
           triggerToLines(trigger, tIndex).forEach(line => lines.push(line));
         });
@@ -964,8 +1096,10 @@ function init() {
         });
       }
 
-      return lines.join('\n');
+      return lines.join('
+');
     }
+
 
     function copyToClipboard(text) {
       if (navigator?.clipboard?.writeText) {
@@ -994,84 +1128,192 @@ function init() {
       });
     }
 
+
+
+
     function renderStrategies() {
-      strategiesWrap.innerHTML = strategies.map((s,i) => {
-        ensureStrategyTriggers(s);
-        ensureStrategyDebug(s);
-        const triggerBlocks = s.triggers.map((trigger, tIndex) => {
-          const condRows = trigger.conditions.map((c,j)=>`
-            <div class="flex items-center gap-2 mb-1" data-cond="${j}" data-trigger="${tIndex}">
+      if (!strategiesWrap) return;
+      let ordinal = 0;
+
+      strategiesWrap.innerHTML = strategies.map((strategy, index) => {
+        ensureStrategyTriggers(strategy);
+        ensureStrategyDebug(strategy);
+
+        if (strategy.isUserGameplay) {
+          const statusText = getUserStrategyStatusText(strategy);
+          const colorCode = (strategy.color || '').toUpperCase();
+          return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${index}" data-user="true">
+            <div class="flex justify-between items-center gap-3">
+              <div class="flex items-center gap-2 flex-1">
+                <span class="inline-flex size-3 rounded-full border border-slate-600" data-role="color-dot" style="background:${strategy.color};"></span>
+                <button type="button" data-action="toggle" class="text-sm font-semibold text-slate-100 text-left flex-1">${strategy.name}</button>
+              </div>
+              <label class="flex items-center gap-1 text-xs text-slate-200"><input type="checkbox" data-field="show" ${strategy.show ? 'checked' : ''}/>Show</label>
+            </div>
+            <div class="mt-2 space-y-3 ${strategy.collapsed ? 'hidden' : ''}" data-fields>
+              <div class="flex items-center gap-3">
+                <label class="flex items-center gap-2 text-sm text-slate-200">
+                  <span>Color</span>
+                  <input type="color" data-field="color" value="${strategy.color}" class="h-9 w-16 rounded border border-slate-600 bg-slate-900/40 cursor-pointer" />
+                </label>
+                <span class="text-xs text-slate-400 font-mono" data-role="color-code">${colorCode}</span>
+              </div>
+              <div class="space-y-1">
+                <div class="text-sm text-slate-200 font-medium">Selection mode</div>
+                <label class="flex items-center gap-2 text-sm text-slate-200"><input type="radio" name="user-mode" value="roi" data-field="mode" ${strategy.mode === 'roi' ? 'checked' : ''}/> ROI</label>
+                <div class="ml-5 text-xs text-slate-400">Mirror the strategy with the highest ROI over the configured lookback window.</div>
+                <label class="flex items-center gap-2 text-sm text-slate-200"><input type="radio" name="user-mode" value="bankroll" data-field="mode" ${strategy.mode === 'bankroll' ? 'checked' : ''}/> Top Performing Strategy</label>
+                <div class="ml-5 text-xs text-slate-400">Mirror the strategy that currently has the highest bankroll.</div>
+              </div>
+              <div class="${strategy.mode === 'roi' ? '' : 'hidden'} space-y-1" data-user-roi>
+                <label class="flex items-center gap-2 text-sm text-slate-200">Lookback rounds
+                  <input type="number" min="1" step="1" data-field="roiWindow" value="${strategy.roiWindow}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
+                </label>
+                <p class="text-xs text-slate-400">Only strategies with at least this many recorded rounds will be considered.</p>
+              </div>
+              <p class="text-xs text-slate-300" data-user-status>${statusText}</p>
+            </div>
+          </div>`;
+        }
+
+        ordinal += 1;
+
+        const triggerBlocks = strategy.triggers.map((trigger, triggerIndex) => {
+          const condRows = trigger.conditions.map((condition, conditionIndex) => `
+            <div class="flex items-center gap-2 mb-1" data-cond="${conditionIndex}" data-trigger="${triggerIndex}">
               <span class="text-xs">Prev Mult</span>
-              <select data-field="condPos" data-trigger="${tIndex}" data-cond="${j}" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
-                ${Array.from({length:10},(_,k)=>`<option value="${k+1}" ${c.pos==k+1?'selected':''}>${k+1}</option>`).join('')}
+              <select data-field="condPos" data-trigger="${triggerIndex}" data-cond="${conditionIndex}" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
+                ${Array.from({ length: 10 }, (_, k) => `<option value="${k + 1}" ${condition.pos == k + 1 ? 'selected' : ''}>${k + 1}</option>`).join('')}
               </select>
-              <select data-field="condOp" data-trigger="${tIndex}" data-cond="${j}" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
-                <option value=">" ${c.op==='>'?'selected':''}>&gt;</option>
-                <option value="<" ${c.op==='<'?'selected':''}>&lt;</option>
-                <option value=">=" ${c.op==='>='?'selected':''}>&ge;</option>
-                <option value="<=" ${c.op==='<='?'selected':''}>&le;</option>
-                <option value="==" ${c.op==='=='?'selected':''}>=</option>
+              <select data-field="condOp" data-trigger="${triggerIndex}" data-cond="${conditionIndex}" class="bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs">
+                <option value=">" ${condition.op === '>' ? 'selected' : ''}>&gt;</option>
+                <option value="<" ${condition.op === '<' ? 'selected' : ''}>&lt;</option>
+                <option value=">=" ${condition.op === '>=' ? 'selected' : ''}>&ge;</option>
+                <option value="<=" ${condition.op === '<=' ? 'selected' : ''}>&le;</option>
+                <option value="==" ${condition.op === '==' ? 'selected' : ''}>=</option>
               </select>
-              <input type="number" step="0.01" data-field="condValue" data-trigger="${tIndex}" data-cond="${j}" value="${c.value}" class="w-20 bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs"/>
-              <button type="button" data-action="remove-cond" data-trigger="${tIndex}" data-cond="${j}" class="text-rose-400 text-xs">&times;</button>
+              <input type="number" step="0.01" data-field="condValue" data-trigger="${triggerIndex}" data-cond="${conditionIndex}" value="${condition.value}" class="w-20 bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs"/>
+              <button type="button" data-action="remove-cond" data-trigger="${triggerIndex}" data-cond="${conditionIndex}" class="text-rose-400 text-xs">&times;</button>
             </div>`).join('');
+
           const emptyState = !trigger.conditions.length
             ? '<p class="text-xs text-slate-500 mb-1">No conditions yet. Add one to define this trigger.</p>'
             : '';
-          return `<div class="rounded border border-slate-700 p-3 bg-slate-900/40 space-y-2" data-trigger-block="${tIndex}">
+
+          return `<div class="rounded border border-slate-700 p-3 bg-slate-900/40 space-y-2" data-trigger-block="${triggerIndex}">
             <div class="flex items-center justify-between">
-              <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Trigger ${tIndex + 1}</h4>
-              ${s.triggers.length > 1 ? `<button type="button" data-action="remove-trigger" data-trigger="${tIndex}" class="text-rose-400 text-xs">Remove trigger</button>` : ''}
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Trigger ${triggerIndex + 1}</h4>
+              ${strategy.triggers.length > 1 ? `<button type="button" data-action="remove-trigger" data-trigger="${triggerIndex}" class="text-rose-400 text-xs">Remove trigger</button>` : ''}
             </div>
             ${emptyState}
             <div class="conditions" data-cond-wrap>${condRows}</div>
-            <button type="button" data-action="add-cond" data-trigger="${tIndex}" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Condition</button>
+            <button type="button" data-action="add-cond" data-trigger="${triggerIndex}" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Condition</button>
           </div>`;
         }).join('');
-        return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${i}">
+
+        return `<div class="border border-slate-700 rounded-lg p-4 space-y-2" data-index="${index}">
           <div class="flex justify-between items-center gap-3">
             <div class="flex items-center gap-2 flex-1">
-              <span class="inline-flex size-3 rounded-full border border-slate-600" data-role="color-dot" style="background:${s.color};"></span>
-              <button type="button" data-action="toggle" class="text-sm font-medium text-slate-100 text-left flex-1">Strategy ${i+1}${s.name?`: ${s.name}`:''}</button>
+              <span class="inline-flex size-3 rounded-full border border-slate-600" data-role="color-dot" style="background:${strategy.color};"></span>
+              <button type="button" data-action="toggle" class="text-sm font-medium text-slate-100 text-left flex-1">Strategy ${ordinal}${strategy.name ? `: ${strategy.name}` : ''}</button>
             </div>
-            <label class="flex items-center gap-1 text-xs text-slate-200 mr-2"><input type="checkbox" data-field="show" ${s.show?'checked':''}/>Show</label>
+            <label class="flex items-center gap-1 text-xs text-slate-200 mr-2"><input type="checkbox" data-field="show" ${strategy.show ? 'checked' : ''}/>Show</label>
             <div class="flex items-center gap-2">
               <button type="button" data-action="duplicate" class="text-indigo-400 text-xs">Duplicate</button>
               <button type="button" data-action="remove" class="text-rose-400 text-xs">Remove</button>
             </div>
           </div>
-          <div class="mt-2 space-y-2 ${s.collapsed?'hidden':''}" data-fields>
-            <input type="text" data-field="name" placeholder="Name" value="${s.name}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
+          <div class="mt-2 space-y-2 ${strategy.collapsed ? 'hidden' : ''}" data-fields>
+            <input type="text" data-field="name" placeholder="Name" value="${strategy.name}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
             <div class="flex items-center gap-3">
               <label class="flex items-center gap-2 text-sm text-slate-200">
                 <span>Color</span>
-                <input type="color" data-field="color" value="${s.color}" class="h-9 w-16 rounded border border-slate-600 bg-slate-900/40 cursor-pointer" />
+                <input type="color" data-field="color" value="${strategy.color}" class="h-9 w-16 rounded border border-slate-600 bg-slate-900/40 cursor-pointer" />
               </label>
-              <span class="text-xs text-slate-400 font-mono" data-role="color-code">${(s.color || '').toUpperCase()}</span>
+              <span class="text-xs text-slate-400 font-mono" data-role="color-code">${(strategy.color || '').toUpperCase()}</span>
             </div>
-            <label class="flex items-center gap-2 text-sm text-slate-200">Cashout <input type="number" step="0.01" min="1.01" data-field="cashout" value="${s.cashout}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount <input type="number" data-field="betAmount" value="${s.betAmount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
-            <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="martingale" ${s.martingale?'checked':''}/> Martingale</label>
-            <input type="text" data-field="sequence" placeholder="1, 1.88, 2.31" value="${s.sequence.join(', ')}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm ${s.martingale?'':'hidden'}" />
+            <label class="flex items-center gap-2 text-sm text-slate-200">Cashout <input type="number" step="0.01" min="1.01" data-field="cashout" value="${strategy.cashout}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+            <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount <input type="number" data-field="betAmount" value="${strategy.betAmount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+            <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="martingale" ${strategy.martingale ? 'checked' : ''}/> Martingale</label>
+            <input type="text" data-field="sequence" placeholder="1, 1.88, 2.31" value="${strategy.sequence.join(', ')}" class="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm ${strategy.martingale ? '' : 'hidden'}" />
             <div class="mt-2 text-sm text-slate-200">Triggers</div>
             <div class="space-y-3">${triggerBlocks}</div>
             <button type="button" data-action="add-trigger" class="mt-1 px-2 py-1 bg-slate-600 text-xs rounded">Add Trigger</button>
-            <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="secondEnabled" ${s.second.enabled?'checked':''}/>Second bet</label>
-            <div class="second-bet-fields ${s.second.enabled?'':'hidden'} space-y-2">
-              <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount<input type="number" data-field="secondAmount" value="${s.second.amount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
-              <label class="flex items-center gap-2 text-sm text-slate-200">When bet1 wins<select data-field="secondRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="restart" ${s.second.restart==='restart'?'selected':''}>Restart</option><option value="lock" ${s.second.restart==='lock'?'selected':''}>Lock</option></select></label>
-              <label class="flex items-center gap-2 text-sm text-slate-200">Lock rounds<input type="number" data-field="secondLockRounds" value="${s.second.lockRounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+            <label class="flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" data-field="secondEnabled" ${strategy.second.enabled ? 'checked' : ''}/>Second bet</label>
+            <div class="second-bet-fields ${strategy.second.enabled ? '' : 'hidden'} space-y-2">
+              <label class="flex items-center gap-2 text-sm text-slate-200">Bet amount<input type="number" data-field="secondAmount" value="${strategy.second.amount}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">When bet1 wins<select data-field="secondRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="restart" ${strategy.second.restart === 'restart' ? 'selected' : ''}>Restart</option><option value="lock" ${strategy.second.restart === 'lock' ? 'selected' : ''}>Lock</option></select></label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">Lock rounds<input type="number" data-field="secondLockRounds" value="${strategy.second.lockRounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
             </div>
-            <div class="mt-2 text-sm text-slate-200"><label class="flex items-center gap-2"><input type="checkbox" data-field="risk" ${s.risk.enabled?'checked':''}/>Enable Risk Management</label></div>
-            <div class="risk-fields ${s.risk.enabled?'':'hidden'} space-y-2 mt-1">
-              <label class="flex items-center gap-2 text-sm text-slate-200">Rounds before pause<input type="number" data-field="riskRounds" value="${s.risk.rounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
-              <label class="flex items-center gap-2 text-sm text-slate-200">Resume after<input type="number" min="0" step="1" data-field="riskResume" value="${s.risk.resumeAbove}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/>hits &ge; cashout</label>
-              <label class="flex items-center gap-2 text-sm text-slate-200">Restart martingale<select data-field="riskRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="start" ${s.risk.restart==='start'?'selected':''}>From start</option><option value="continue" ${s.risk.restart==='continue'?'selected':''}>Where left off</option></select></label>
+            <div class="mt-2 text-sm text-slate-200"><label class="flex items-center gap-2"><input type="checkbox" data-field="risk" ${strategy.risk.enabled ? 'checked' : ''}/>Enable Risk Management</label></div>
+            <div class="risk-fields ${strategy.risk.enabled ? '' : 'hidden'} space-y-2 mt-1">
+              <label class="flex items-center gap-2 text-sm text-slate-200">Rounds before pause<input type="number" data-field="riskRounds" value="${strategy.risk.rounds}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/></label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">Resume after<input type="number" min="0" step="1" data-field="riskResume" value="${strategy.risk.resumeAbove}" class="w-24 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"/>hits &ge; cashout</label>
+              <label class="flex items-center gap-2 text-sm text-slate-200">Restart martingale<select data-field="riskRestart" class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm"><option value="start" ${strategy.risk.restart === 'start' ? 'selected' : ''}>From start</option><option value="continue" ${strategy.risk.restart === 'continue' ? 'selected' : ''}>Where left off</option></select></label>
             </div>
           </div>
         </div>`;
       }).join('');
+
       renderDebugPanel();
+      updateUserStrategyStatus();
+    }
+
+    function getUserStrategyStatusText(user) {
+      if (!user) {
+        return '';
+      }
+      if (!user.activeStrategyName) {
+        return 'No eligible strategies are currently being mirrored.';
+      }
+      return `Currently mirroring: ${user.activeStrategyName}`;
+    }
+
+    function updateUserStrategyStatus() {
+      const user = getUserStrategy();
+      if (!user || !strategiesWrap) return;
+      const statusNode = strategiesWrap.querySelector('[data-user-status]');
+      if (!statusNode) return;
+      statusNode.textContent = getUserStrategyStatusText(user);
+    }
+
+    function selectMirroredStrategy(user) {
+      const candidates = nonUserStrategies().filter(strat => strat.show);
+      if (!candidates.length) {
+        return null;
+      }
+
+      if (user.mode === 'bankroll') {
+        return candidates.reduce((best, strat) => (
+          !best || strat.bankroll > best.bankroll ? strat : best
+        ), null);
+      }
+
+      const lookback = Math.max(1, parseInt(user.roiWindow, 10) || 1);
+      let chosen = null;
+      let bestRoi = -Infinity;
+
+      candidates.forEach((strat) => {
+        const dataPoints = Array.isArray(strat.data) ? strat.data : [];
+        if (dataPoints.length < 2) return;
+        const end = dataPoints[dataPoints.length - 1];
+        const startIdx = Math.max(0, dataPoints.length - 1 - lookback);
+        const start = dataPoints[startIdx];
+        if (!Number.isFinite(start) || start <= 0) return;
+        const roi = (end - start) / start;
+        if (roi > bestRoi) {
+          bestRoi = roi;
+          chosen = strat;
+        }
+      });
+
+      if (chosen) {
+        return chosen;
+      }
+
+      return candidates.reduce((best, strat) => (
+        !best || strat.bankroll > best.bankroll ? strat : best
+      ), null);
     }
 
     strategiesWrap.addEventListener('input', (e) => {
@@ -1086,6 +1328,18 @@ function init() {
         case 'name': s.name = e.target.value; syncChartDatasets(); break;
         case 'cashout': s.cashout = parseFloat(e.target.value) || s.cashout; break;
         case 'betAmount': s.betAmount = parseFloat(e.target.value) || s.betAmount; break;
+        case 'mode':
+          if (s.isUserGameplay) {
+            s.mode = e.target.value === 'bankroll' ? 'bankroll' : 'roi';
+            renderStrategies();
+          }
+          break;
+        case 'roiWindow':
+          if (s.isUserGameplay) {
+            const parsed = parseInt(e.target.value, 10);
+            s.roiWindow = Number.isFinite(parsed) && parsed > 0 ? parsed : s.roiWindow;
+          }
+          break;
         case 'martingale': s.martingale = e.target.checked; renderStrategies(); break;
         case 'sequence': s.sequence = e.target.value.split(',').map(v=>parseFloat(v.trim())).filter(n=>!isNaN(n)); break;
         case 'color': {
@@ -1147,6 +1401,7 @@ function init() {
       }
       saveState();
       renderDebugPanel();
+      updateUserStrategyStatus();
     });
 
     strategiesWrap.addEventListener('click', (e) => {
@@ -1156,6 +1411,14 @@ function init() {
       ensureStrategyTriggers(s);
       ensureStrategyDebug(s);
       const action = e.target.dataset.action;
+      if (s.isUserGameplay) {
+        if (action === 'toggle') {
+          s.collapsed = !s.collapsed;
+          renderStrategies();
+        }
+        saveState();
+        return;
+      }
       if (action === 'remove') { strategies.splice(idx,1); renderStrategies(); syncChartDatasets(); }
       if (action === 'duplicate') {
         const clone = JSON.parse(JSON.stringify(s));
@@ -1211,6 +1474,7 @@ function init() {
       }
       saveState();
       renderDebugPanel();
+      updateUserStrategyStatus();
     });
 
     if (addStrategyBtn) {
@@ -1223,6 +1487,7 @@ function init() {
         strategies.push(ns);
         renderStrategies();
         syncChartDatasets();
+        updateUserStrategyStatus();
         saveState();
       });
     }
@@ -1283,41 +1548,80 @@ function init() {
       statusMessage('Simulation paused — reached end of the multipliers dataset. Add more under Settings → Multipliers or reset to play again.');
     }
 
+
+
     function step() {
       if (preloadIdx >= multipliers.length) {
         finishSimulation();
         return;
       }
+
       const currMult = multipliers[preloadIdx++];
       const roundNumber = preloadIdx;
       usedMultipliers.push(currMult);
       if (usedMultipliers.length > 10) usedMultipliers.shift();
       renderLastMultipliers(usedMultipliers);
 
-      strategies.forEach(s => {
-        ensureStrategyDebug(s);
-        const bankrollBefore = s.bankroll;
-        const shouldBet = evaluateTriggers(s.triggers, usedMultipliers);
-        if (s.cooldown) {
-          if (shouldBet && currMult >= s.cashout) {
-            s.resumeHits++;
-            if (s.resumeHits >= s.risk.resumeAbove) {
-              s.cooldown = false;
-              s.resumeHits = 0;
-              s.lossStreak = 0;
-              if (s.risk.restart === 'start') s.martiIdx = 0;
+      strategies.forEach((strategy) => {
+        ensureStrategyDebug(strategy);
+        const bankrollBefore = strategy.bankroll;
+        let target = null;
+        let triggersToEvaluate = Array.isArray(strategy.triggers) ? strategy.triggers : [];
+        let sequence = Array.isArray(strategy.sequence) ? strategy.sequence : [];
+        let martingaleEnabled = strategy.martingale && sequence.length > 0;
+        let activeRisk = normalizeRiskConfig(strategy.risk);
+
+        if (strategy.isUserGameplay) {
+          target = selectMirroredStrategy(strategy);
+          const label = target ? strategyLabel(target) : '';
+          strategy.activeStrategyName = label;
+          if (!target) {
+            strategy.data.push(strategy.bankroll);
+            if (strategy.data.length > labels.length) strategy.data.shift();
+            pushDebugRound(strategy, {
+              round: roundNumber,
+              multiplier: currMult,
+              decision: 'Skip',
+              outcome: 'No strategy selected',
+              bet: 0,
+              bankrollAfter: strategy.bankroll,
+              bankrollBefore,
+            });
+            return;
+          }
+          triggersToEvaluate = Array.isArray(target.triggers) ? target.triggers : [];
+          sequence = Array.isArray(target.sequence) ? target.sequence : [];
+          martingaleEnabled = target.martingale && sequence.length > 0;
+          activeRisk = normalizeRiskConfig(target.risk);
+          strategy.cashout = target.cashout;
+          strategy.betAmount = target.betAmount;
+          if (martingaleEnabled && strategy.martiIdx >= sequence.length) {
+            strategy.martiIdx = sequence.length - 1;
+          }
+          if (strategy.martiIdx < 0) strategy.martiIdx = 0;
+        }
+
+        const shouldBet = evaluateTriggers(triggersToEvaluate, usedMultipliers);
+        if (strategy.cooldown) {
+          if (shouldBet && currMult >= strategy.cashout) {
+            strategy.resumeHits++;
+            if (strategy.resumeHits >= activeRisk.resumeAbove) {
+              strategy.cooldown = false;
+              strategy.resumeHits = 0;
+              strategy.lossStreak = 0;
+              if (activeRisk.restart === 'start') strategy.martiIdx = 0;
             }
           }
-          s.data.push(s.bankroll);
-          if (s.data.length > labels.length) s.data.shift();
-          pushDebugRound(s, {
+          strategy.data.push(strategy.bankroll);
+          if (strategy.data.length > labels.length) strategy.data.shift();
+          pushDebugRound(strategy, {
             round: roundNumber,
             multiplier: currMult,
             decision: 'Cooldown',
             outcome: 'Paused',
             bet: 0,
-            bankrollAfter: s.bankroll,
-            bankrollBefore
+            bankrollAfter: strategy.bankroll,
+            bankrollBefore,
           });
           return;
         }
@@ -1325,36 +1629,41 @@ function init() {
         let decision = 'Skip';
         let outcome = 'No bet';
         let bet = 0;
+
         if (shouldBet) {
-          const seqMul = s.martingale && s.sequence.length ? (s.sequence[s.martiIdx] || 1) : 1;
-          bet = s.betAmount * seqMul;
+          const seqMul = martingaleEnabled ? (sequence[strategy.martiIdx] || 1) : 1;
+          bet = strategy.betAmount * seqMul;
           decision = 'Bet';
-          outcome = currMult >= s.cashout ? 'Win' : 'Loss';
-          if (currMult >= s.cashout) {
-            s.bankroll += bet * (s.cashout - 1);
-            s.martiIdx = 0;
-            s.lossStreak = 0;
+          outcome = currMult >= strategy.cashout ? 'Win' : 'Loss';
+
+          if (currMult >= strategy.cashout) {
+            strategy.bankroll += bet * (strategy.cashout - 1);
+            strategy.martiIdx = 0;
+            strategy.lossStreak = 0;
           } else {
-            s.bankroll -= bet;
-            if (s.martingale && s.martiIdx < s.sequence.length - 1) s.martiIdx++;
-            s.lossStreak++;
-            if (s.risk.enabled && s.risk.rounds > 0 && s.lossStreak >= s.risk.rounds) {
-              s.cooldown = true;
-              s.resumeHits = 0;
+            strategy.bankroll -= bet;
+            if (martingaleEnabled && strategy.martiIdx < sequence.length - 1) {
+              strategy.martiIdx++;
+            }
+            strategy.lossStreak++;
+            if (activeRisk.enabled && activeRisk.rounds > 0 && strategy.lossStreak >= activeRisk.rounds) {
+              strategy.cooldown = true;
+              strategy.resumeHits = 0;
             }
           }
         }
-        s.data.push(s.bankroll);
-        if (s.data.length > labels.length) s.data.shift();
 
-        pushDebugRound(s, {
+        strategy.data.push(strategy.bankroll);
+        if (strategy.data.length > labels.length) strategy.data.shift();
+
+        pushDebugRound(strategy, {
           round: roundNumber,
           multiplier: currMult,
           decision,
           outcome,
           bet,
-          bankrollAfter: s.bankroll,
-          bankrollBefore
+          bankrollAfter: strategy.bankroll,
+          bankrollBefore,
         });
       });
 
@@ -1363,6 +1672,7 @@ function init() {
       syncChartDatasets();
 
       prevMult = currMult;
+      updateUserStrategyStatus();
       renderDebugPanel();
     }
 
@@ -1406,12 +1716,16 @@ function init() {
         ensureStrategyDebug(s);
         s.debug.rounds = [];
         s.debug.selectedRound = null;
+        if (s.isUserGameplay) {
+          s.activeStrategyName = '';
+        }
       });
 
       renderLastMultipliers([]);
       syncChartDatasets();
       chart.update();
       renderDebugPanel();
+      updateUserStrategyStatus();
 
       const hasMultipliers = multipliers.length > 0;
       const shouldRun = keepRunningState ? previousRunning : true;

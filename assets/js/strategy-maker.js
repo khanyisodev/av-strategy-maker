@@ -917,33 +917,42 @@ function init() {
 
       const streakCounts = new Map();
       let currentStreak = 0;
+      let longestObserved = 0;
 
       rounds.forEach((round) => {
         const decision = typeof round.decision === 'string' ? round.decision.toLowerCase() : '';
         const outcome = typeof round.outcome === 'string' ? round.outcome.toLowerCase() : '';
         const betPlaced = decision === 'bet';
 
-        if (betPlaced) {
-          if (outcome === 'loss') {
-            currentStreak += 1;
-          } else if (outcome === 'win') {
-            const key = currentStreak;
-            streakCounts.set(key, (streakCounts.get(key) || 0) + 1);
-            currentStreak = 0;
-          } else {
-            currentStreak = 0;
-          }
-        } else if (outcome !== 'loss') {
+        if (betPlaced && outcome === 'loss') {
+          currentStreak += 1;
+          longestObserved = Math.max(longestObserved, currentStreak);
+          return;
+        }
+
+        if (betPlaced && outcome === 'win') {
+          longestObserved = Math.max(longestObserved, currentStreak);
+          const key = currentStreak;
+          streakCounts.set(key, (streakCounts.get(key) || 0) + 1);
           currentStreak = 0;
+          return;
+        }
+
+        if (!betPlaced && outcome === 'win' && currentStreak > 0) {
+          longestObserved = Math.max(longestObserved, currentStreak);
+          const key = currentStreak;
+          streakCounts.set(key, (streakCounts.get(key) || 0) + 1);
+          currentStreak = 0;
+          return;
         }
       });
 
-      const sortedKeys = Array.from(streakCounts.keys()).sort((a, b) => a - b);
-      if (!sortedKeys.length) {
-        return { labels: [], values: [], totalWins: 0, longest: 0 };
+      if (streakCounts.size === 0) {
+        return { labels: [], values: [], totalWins: 0, longest: longestObserved };
       }
 
-      const longest = sortedKeys[sortedKeys.length - 1];
+      const longestKey = Math.max(...streakCounts.keys());
+      const longest = Math.max(longestObserved, longestKey);
       const labels = [];
       const values = [];
 

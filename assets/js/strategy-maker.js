@@ -438,6 +438,7 @@ function init() {
     let labels = Array.from({ length: maxPointsDefault }, (_, i) => i - maxPointsDefault);
 
     const strategies = [];
+    const debugLoseStreakCharts = new Map();
 
     function createTrigger() {
       return { conditions: [] };
@@ -713,13 +714,13 @@ function init() {
 
     function ensureStrategyDebug(strategy) {
       if (!strategy.debug || typeof strategy.debug !== 'object') {
-        strategy.debug = { rounds: [], expanded: true, selectedRound: null };
+        strategy.debug = { rounds: [], expanded: false, selectedRound: null };
       }
       if (!Array.isArray(strategy.debug.rounds)) {
         strategy.debug.rounds = [];
       }
       if (typeof strategy.debug.expanded !== 'boolean') {
-        strategy.debug.expanded = true;
+        strategy.debug.expanded = false;
       }
       if (strategy.debug.selectedRound !== null && !Number.isInteger(strategy.debug.selectedRound)) {
         strategy.debug.selectedRound = null;
@@ -861,11 +862,11 @@ function init() {
             base.resumeHits = 0;
             const seriesLength = getInitialSeriesLength();
             base.data = Array.from({ length: seriesLength }, () => INITIAL_BANKROLL);
-            base.triggers = isUserGameplay ? [] : normalizeTriggers(saved);
-            ensureStrategyDebug(base);
-            base.debug.rounds = [];
-            base.debug.selectedRound = null;
-            base.debug.expanded = true;
+              base.triggers = isUserGameplay ? [] : normalizeTriggers(saved);
+              ensureStrategyDebug(base);
+              base.debug.rounds = [];
+              base.debug.selectedRound = null;
+              base.debug.expanded = false;
             delete base.conditions;
             if (isUserGameplay) {
               ensureUserGameplayDefaults(base);
@@ -900,9 +901,165 @@ function init() {
       });
     }
 
+    function destroyLoseStreakCharts() {
+      debugLoseStreakCharts.forEach((chart) => {
+        if (chart && typeof chart.destroy === 'function') {
+          chart.destroy();
+        }
+      });
+      debugLoseStreakCharts.clear();
+    }
+
+    function computeLoseStreakDistribution(rounds) {
+      if (!Array.isArray(rounds) || !rounds.length) {
+        return { labels: [], values: [], totalWins: 0, longest: 0 };
+      }
+
+      const streakCounts = new Map();
+      let currentStreak = 0;
+
+      rounds.forEach((round) => {
+        const decision = typeof round.decision === 'string' ? round.decision.toLowerCase() : '';
+        const outcome = typeof round.outcome === 'string' ? round.outcome.toLowerCase() : '';
+        const betPlaced = decision === 'bet';
+
+        if (betPlaced) {
+          if (outcome === 'loss') {
+            currentStreak += 1;
+          } else if (outcome === 'win') {
+            const key = currentStreak;
+            streakCounts.set(key, (streakCounts.get(key) || 0) + 1);
+            currentStreak = 0;
+          } else {
+            currentStreak = 0;
+          }
+        } else if (outcome !== 'loss') {
+          currentStreak = 0;
+        }
+      });
+
+      const labels = Array.from(streakCounts.keys()).sort((a, b) => a - b);
+      const values = labels.map(label => streakCounts.get(label));
+      const totalWins = values.reduce((sum, count) => sum + count, 0);
+      const longest = labels.length ? labels[labels.length - 1] : 0;
+
+      return { labels, values, totalWins, longest };
+    }
+
+    function formatLossLabel(losses) {
+      if (losses === 1) return '1 loss';
+      return `${losses} losses`;
+    }
+
+    function renderLoseStreakChart(strategy, index) {
+      const container = debugWrap.querySelector(`[data-lose-streak-container="${index}"]`);
+      if (!container) return;
+
+      const canvas = container.querySelector('canvas[data-lose-streak-chart]');
+      const summaryEl = container.querySelector(`[data-lose-streak-summary="${index}"]`);
+      const emptyEl = container.querySelector(`[data-lose-streak-empty="${index}"]`);
+      const chartWrap = container.querySelector(`[data-lose-streak-chart-wrap="${index}"]`);
+
+      if (!canvas) {
+        return;
+      }
+
+      const { labels, values, totalWins, longest } = computeLoseStreakDistribution(strategy.debug.rounds || []);
+
+      if (!labels.length || !values.length) {
+        if (summaryEl) {
+          summaryEl.textContent = 'No wins yet';
+        }
+        if (chartWrap) {
+          chartWrap.classList.add('hidden');
+        }
+        if (emptyEl) {
+          emptyEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      if (chartWrap) {
+        chartWrap.classList.remove('hidden');
+      }
+      if (emptyEl) {
+        emptyEl.classList.add('hidden');
+      }
+      if (summaryEl) {
+        const winsLabel = totalWins === 1 ? '1 win' : `${totalWins} wins`;
+        summaryEl.textContent = `${winsLabel} • Longest ${formatLossLabel(longest)}`;
+      }
+
+      const ctxChart = canvas.getContext('2d');
+      if (!ctxChart) {
+        return;
+      }
+
+      const barColor = HEX_COLOR_REGEX.test(strategy.color || '')
+        ? strategy.color
+        : '#6366F1';
+
+      const chart = new Chart(ctxChart, {
+        type: 'bar',
+        data: {
+          labels: labels.map(formatLossLabel),
+          datasets: [{
+            label: 'Lose streak count',
+            data: values,
+            backgroundColor: hexToRgba(barColor, 0.5),
+            borderColor: hexToRgba(barColor, 0.9),
+            borderWidth: 1.5,
+            borderRadius: 6,
+            maxBarThickness: 28,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              grid: {
+                color: 'rgba(148, 163, 184, 0.1)',
+              },
+              ticks: {
+                color: '#CBD5F5',
+                font: { size: 10 },
+              },
+            },
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: 'rgba(148, 163, 184, 0.1)',
+              },
+              ticks: {
+                precision: 0,
+                color: '#CBD5F5',
+                font: { size: 10 },
+              },
+            },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const value = context.parsed.y;
+                  return `${value} ${value === 1 ? 'occurrence' : 'occurrences'}`;
+                }
+              }
+            }
+          },
+        },
+      });
+
+      debugLoseStreakCharts.set(index, chart);
+    }
+
     function renderDebugPanel() {
       if (!debugWrap) return;
       if (!strategies.length) {
+        destroyLoseStreakCharts();
         debugWrap.innerHTML = '<p class="text-xs text-slate-500">Create a strategy to see its simulation log here.</p>';
         return;
       }
@@ -912,10 +1069,12 @@ function init() {
         .filter(({ strategy }) => strategy.show);
 
       if (!visibleStrategies.length) {
+        destroyLoseStreakCharts();
         debugWrap.innerHTML = '<p class="text-xs text-slate-500">Enable “Show” for a strategy to inspect its debug log.</p>';
         return;
       }
 
+      destroyLoseStreakCharts();
       debugWrap.innerHTML = visibleStrategies.map(({ strategy, index }) => {
         ensureStrategyDebug(strategy);
         if (strategy.isUserGameplay) {
@@ -980,13 +1139,30 @@ function init() {
             </button>
             <button type="button" data-debug-copy="${index}" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded border border-slate-600 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 transition-colors duration-150">Copy log</button>
           </div>
-          <div class="px-4 py-3 space-y-2 ${strategy.debug.expanded ? '' : 'hidden'}" data-debug-body="${index}">
+          <div class="px-4 py-3 space-y-3 ${strategy.debug.expanded ? '' : 'hidden'}" data-debug-body="${index}">
+            <div class="bg-slate-950/60 border border-slate-800 rounded-lg p-3" data-lose-streak-container="${index}">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-semibold text-slate-200 uppercase tracking-wide">Lose streak distribution</span>
+                <span class="text-[11px] text-slate-500" data-lose-streak-summary="${index}">No wins yet</span>
+              </div>
+              <div class="mt-2 h-36" data-lose-streak-chart-wrap="${index}">
+                <canvas data-lose-streak-chart="${index}" height="150"></canvas>
+              </div>
+              <p class="mt-2 text-[11px] text-slate-500 hidden" data-lose-streak-empty="${index}">Need at least one win after a betting streak to calculate this distribution.</p>
+            </div>
             ${feedbackMarkup}
             <div class="text-xs text-slate-400">${summary}</div>
             <div class="space-y-2">${roundsMarkup}</div>
           </div>
         </div>`;
       }).join('');
+
+      visibleStrategies.forEach(({ strategy, index }) => {
+        if (!strategy.debug.expanded) {
+          return;
+        }
+        renderLoseStreakChart(strategy, index);
+      });
     }
 
     function triggerToLines(trigger, index) {

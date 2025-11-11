@@ -938,10 +938,21 @@ function init() {
         }
       });
 
-      const labels = Array.from(streakCounts.keys()).sort((a, b) => a - b);
-      const values = labels.map(label => streakCounts.get(label));
+      const sortedKeys = Array.from(streakCounts.keys()).sort((a, b) => a - b);
+      if (!sortedKeys.length) {
+        return { labels: [], values: [], totalWins: 0, longest: 0 };
+      }
+
+      const longest = sortedKeys[sortedKeys.length - 1];
+      const labels = [];
+      const values = [];
+
+      for (let losses = 0; losses <= longest; losses += 1) {
+        labels.push(losses);
+        values.push(streakCounts.get(losses) || 0);
+      }
+
       const totalWins = values.reduce((sum, count) => sum + count, 0);
-      const longest = labels.length ? labels[labels.length - 1] : 0;
 
       return { labels, values, totalWins, longest };
     }
@@ -1134,7 +1145,7 @@ function init() {
         return `<div class="border border-slate-700 rounded-lg overflow-hidden" data-debug-card="${index}">
           <div class="flex items-center justify-between px-4 py-3 bg-slate-900/60 gap-3">
             <button type="button" data-debug-toggle="${index}" class="flex-1 flex items-center justify-between gap-3 text-left hover:text-slate-100">
-              <span class="text-sm font-semibold text-slate-100 flex items-center gap-2"><span class="inline-flex size-2.5 rounded-full" style="background:${strategy.color};"></span>${label}</span>
+              <span class="text-sm font-medium text-slate-100 flex items-center gap-2"><span class="inline-flex size-2.5 rounded-full" style="background:${strategy.color};"></span>${label}</span>
               <span class="text-xs text-slate-400">${rounds.length} rounds</span>
             </button>
             <button type="button" data-debug-copy="${index}" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded border border-slate-600 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 transition-colors duration-150">Copy log</button>
@@ -1333,7 +1344,7 @@ function init() {
             <div class="flex justify-between items-center gap-3">
               <div class="flex items-center gap-2 flex-1">
                 <span class="inline-flex size-3 rounded-full border border-slate-600" data-role="color-dot" style="background:${s.color};"></span>
-                <span class="text-sm font-semibold text-slate-100">User Gameplay</span>
+                <span class="text-sm font-medium text-slate-100">User Gameplay</span>
               </div>
               <label class="flex items-center gap-1 text-xs text-slate-200 mr-2"><input type="checkbox" data-field="show" ${s.show?'checked':''}/>Show</label>
             </div>

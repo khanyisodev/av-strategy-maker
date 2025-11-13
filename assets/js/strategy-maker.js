@@ -438,6 +438,7 @@ function init() {
     let labels = Array.from({ length: maxPointsDefault }, (_, i) => i - maxPointsDefault);
 
     const strategies = [];
+    const debugLoseStreakCharts = new Map();
 
     function createTrigger() {
       return { conditions: [] };
@@ -613,10 +614,10 @@ function init() {
       return limit;
     }
 
-    function defaultStrategy() {
+    function defaultStrategy(overrides = {}) {
       const color = nextStrategyColor();
       const seriesLength = getInitialSeriesLength();
-      return {
+      const base = {
         name: '',
         cashout: defaultCashout,
         betAmount: INITIAL_BET,
@@ -638,19 +639,88 @@ function init() {
           rounds: [],
           expanded: true,
           selectedRound: null
-        }
+        },
+        isUserGameplay: false,
+        userGameplay: null,
       };
+      return Object.assign(base, overrides);
+    }
+
+    function ensureUserGameplayDefaults(userStrategy) {
+      if (!userStrategy) return;
+      userStrategy.name = 'User Gameplay';
+      userStrategy.isUserGameplay = true;
+      userStrategy.show = true;
+      if (!userStrategy.userGameplay || typeof userStrategy.userGameplay !== 'object') {
+        userStrategy.userGameplay = {
+          mode: 'roi',
+          roiRounds: 10,
+          lastTargetIndex: null,
+          lastTargetName: '',
+          lastTargetColor: '',
+        };
+      }
+      if (!['roi', 'top'].includes(userStrategy.userGameplay.mode)) {
+        userStrategy.userGameplay.mode = 'roi';
+      }
+      const rounds = parseInt(userStrategy.userGameplay.roiRounds, 10);
+      userStrategy.userGameplay.roiRounds = Number.isInteger(rounds) && rounds > 0 ? rounds : 10;
+      userStrategy.userGameplay.lastTargetIndex = Number.isInteger(userStrategy.userGameplay.lastTargetIndex)
+        ? userStrategy.userGameplay.lastTargetIndex
+        : null;
+      userStrategy.userGameplay.lastTargetName = typeof userStrategy.userGameplay.lastTargetName === 'string'
+        ? userStrategy.userGameplay.lastTargetName
+        : '';
+      userStrategy.userGameplay.lastTargetColor = typeof userStrategy.userGameplay.lastTargetColor === 'string'
+        ? userStrategy.userGameplay.lastTargetColor
+        : '';
+      userStrategy.triggers = [];
+      userStrategy.sequence = Array.isArray(userStrategy.sequence) ? userStrategy.sequence : [];
+      userStrategy.martingale = !!userStrategy.martingale;
+    }
+
+    function createUserGameplayStrategy() {
+      const userStrategy = defaultStrategy({
+        color: '#38BDF8',
+        collapsed: false,
+      });
+      userStrategy.userGameplay = {
+        mode: 'roi',
+        roiRounds: 10,
+        lastTargetIndex: null,
+        lastTargetName: '',
+        lastTargetColor: '',
+      };
+      userStrategy.isUserGameplay = true;
+      userStrategy.triggers = [];
+      ensureUserGameplayDefaults(userStrategy);
+      return userStrategy;
+    }
+
+    function ensureUserGameplayStrategy() {
+      let index = strategies.findIndex(strategy => strategy.isUserGameplay);
+      if (index === -1) {
+        const userStrategy = createUserGameplayStrategy();
+        strategies.unshift(userStrategy);
+        return userStrategy;
+      }
+      const [userStrategy] = index === 0 ? [strategies[0]] : strategies.splice(index, 1);
+      if (index !== 0) {
+        strategies.unshift(userStrategy);
+      }
+      ensureUserGameplayDefaults(userStrategy);
+      return userStrategy;
     }
 
     function ensureStrategyDebug(strategy) {
       if (!strategy.debug || typeof strategy.debug !== 'object') {
-        strategy.debug = { rounds: [], expanded: true, selectedRound: null };
+        strategy.debug = { rounds: [], expanded: false, selectedRound: null };
       }
       if (!Array.isArray(strategy.debug.rounds)) {
         strategy.debug.rounds = [];
       }
       if (typeof strategy.debug.expanded !== 'boolean') {
-        strategy.debug.expanded = true;
+        strategy.debug.expanded = false;
       }
       if (strategy.debug.selectedRound !== null && !Number.isInteger(strategy.debug.selectedRound)) {
         strategy.debug.selectedRound = null;
@@ -685,29 +755,59 @@ function init() {
       const state = {
         speed: speedEl.value,
         window: windowEl.value,
-        strategies: strategies.map(({ name, cashout, betAmount, show, martingale, sequence, triggers, risk, second, color, collapsed }) => ({
-          name,
-          cashout,
-          betAmount,
-          show,
-          martingale,
-          sequence,
-          triggers: Array.isArray(triggers)
-            ? triggers.map(trigger => ({
-                conditions: Array.isArray(trigger.conditions)
-                  ? trigger.conditions.map(cond => ({
-                      pos: cond.pos,
-                      op: cond.op,
-                      value: cond.value,
-                    }))
-                  : []
-              }))
-            : [createTrigger()],
-          risk,
-          second,
-          color,
-          collapsed
-        })),
+        strategies: strategies.map((strategy) => {
+          const {
+            name,
+            cashout,
+            betAmount,
+            show,
+            martingale,
+            sequence,
+            triggers,
+            risk,
+            second,
+            color,
+            collapsed,
+            isUserGameplay,
+            userGameplay,
+          } = strategy;
+
+          const serialized = {
+            name,
+            cashout,
+            betAmount,
+            show,
+            martingale,
+            sequence,
+            triggers: Array.isArray(triggers)
+              ? triggers.map(trigger => ({
+                  conditions: Array.isArray(trigger.conditions)
+                    ? trigger.conditions.map(cond => ({
+                        pos: cond.pos,
+                        op: cond.op,
+                        value: cond.value,
+                      }))
+                    : []
+                }))
+              : [createTrigger()],
+            risk,
+            second,
+            color,
+            collapsed,
+            isUserGameplay: !!isUserGameplay,
+          };
+
+          if (isUserGameplay) {
+            serialized.userGameplay = {
+              mode: userGameplay?.mode || 'roi',
+              roiRounds: Number.isInteger(parseInt(userGameplay?.roiRounds, 10))
+                ? parseInt(userGameplay.roiRounds, 10)
+                : 10,
+            };
+          }
+
+          return serialized;
+        }),
         multipliers
       };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
@@ -749,7 +849,8 @@ function init() {
         if (Array.isArray(state.strategies)) {
           strategies.splice(0, strategies.length);
           state.strategies.forEach(saved => {
-            const base = defaultStrategy();
+            const isUserGameplay = !!saved.isUserGameplay;
+            const base = isUserGameplay ? createUserGameplayStrategy() : defaultStrategy();
             Object.assign(base, saved);
             if (!HEX_COLOR_REGEX.test(base.color || '')) {
               base.color = randomStrategyColor(strategies.map(st => st.color));
@@ -761,12 +862,15 @@ function init() {
             base.resumeHits = 0;
             const seriesLength = getInitialSeriesLength();
             base.data = Array.from({ length: seriesLength }, () => INITIAL_BANKROLL);
-            base.triggers = normalizeTriggers(saved);
-            ensureStrategyDebug(base);
-            base.debug.rounds = [];
-            base.debug.selectedRound = null;
-            base.debug.expanded = true;
+              base.triggers = isUserGameplay ? [] : normalizeTriggers(saved);
+              ensureStrategyDebug(base);
+              base.debug.rounds = [];
+              base.debug.selectedRound = null;
+              base.debug.expanded = false;
             delete base.conditions;
+            if (isUserGameplay) {
+              ensureUserGameplayDefaults(base);
+            }
             strategies.push(base);
           });
         }
@@ -774,11 +878,16 @@ function init() {
     }
 
     loadState();
+    ensureUserGameplayStrategy();
     syncMultipliersEditor();
     renderStrategies();
     syncChartDatasets();
 
     function ensureStrategyTriggers(strategy) {
+      if (strategy?.isUserGameplay) {
+        strategy.triggers = [];
+        return;
+      }
       if (!Array.isArray(strategy.triggers)) {
         strategy.triggers = [createTrigger()];
       }
@@ -792,9 +901,185 @@ function init() {
       });
     }
 
+    function destroyLoseStreakCharts() {
+      debugLoseStreakCharts.forEach((chart) => {
+        if (chart && typeof chart.destroy === 'function') {
+          chart.destroy();
+        }
+      });
+      debugLoseStreakCharts.clear();
+    }
+
+    function computeLoseStreakDistribution(rounds) {
+      if (!Array.isArray(rounds) || !rounds.length) {
+        return { labels: [], values: [], totalWins: 0, longest: 0 };
+      }
+
+      const streakCounts = new Map();
+      let currentStreak = 0;
+      let longestObserved = 0;
+
+      rounds.forEach((round) => {
+        const decision = typeof round.decision === 'string' ? round.decision.toLowerCase() : '';
+        const outcome = typeof round.outcome === 'string' ? round.outcome.toLowerCase() : '';
+        const betPlaced = decision === 'bet';
+
+        if (betPlaced && outcome === 'loss') {
+          currentStreak += 1;
+          longestObserved = Math.max(longestObserved, currentStreak);
+          return;
+        }
+
+        if (betPlaced && outcome === 'win') {
+          longestObserved = Math.max(longestObserved, currentStreak);
+          const key = currentStreak;
+          streakCounts.set(key, (streakCounts.get(key) || 0) + 1);
+          currentStreak = 0;
+          return;
+        }
+
+        if (!betPlaced && outcome === 'win' && currentStreak > 0) {
+          longestObserved = Math.max(longestObserved, currentStreak);
+          const key = currentStreak;
+          streakCounts.set(key, (streakCounts.get(key) || 0) + 1);
+          currentStreak = 0;
+          return;
+        }
+      });
+
+      if (streakCounts.size === 0) {
+        return { labels: [], values: [], totalWins: 0, longest: longestObserved };
+      }
+
+      const longestKey = Math.max(...streakCounts.keys());
+      const longest = Math.max(longestObserved, longestKey);
+      const labels = [];
+      const values = [];
+
+      for (let losses = 0; losses <= longest; losses += 1) {
+        labels.push(losses);
+        values.push(streakCounts.get(losses) || 0);
+      }
+
+      const totalWins = values.reduce((sum, count) => sum + count, 0);
+
+      return { labels, values, totalWins, longest };
+    }
+
+    function formatLossLabel(losses) {
+      if (losses === 1) return '1 loss';
+      return `${losses} losses`;
+    }
+
+    function renderLoseStreakChart(strategy, index) {
+      const container = debugWrap.querySelector(`[data-lose-streak-container="${index}"]`);
+      if (!container) return;
+
+      const canvas = container.querySelector('canvas[data-lose-streak-chart]');
+      const summaryEl = container.querySelector(`[data-lose-streak-summary="${index}"]`);
+      const emptyEl = container.querySelector(`[data-lose-streak-empty="${index}"]`);
+      const chartWrap = container.querySelector(`[data-lose-streak-chart-wrap="${index}"]`);
+
+      if (!canvas) {
+        return;
+      }
+
+      const { labels, values, totalWins, longest } = computeLoseStreakDistribution(strategy.debug.rounds || []);
+
+      if (!labels.length || !values.length) {
+        if (summaryEl) {
+          summaryEl.textContent = 'No wins yet';
+        }
+        if (chartWrap) {
+          chartWrap.classList.add('hidden');
+        }
+        if (emptyEl) {
+          emptyEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      if (chartWrap) {
+        chartWrap.classList.remove('hidden');
+      }
+      if (emptyEl) {
+        emptyEl.classList.add('hidden');
+      }
+      if (summaryEl) {
+        const winsLabel = totalWins === 1 ? '1 win' : `${totalWins} wins`;
+        summaryEl.textContent = `${winsLabel} • Longest ${formatLossLabel(longest)}`;
+      }
+
+      const ctxChart = canvas.getContext('2d');
+      if (!ctxChart) {
+        return;
+      }
+
+      const barColor = HEX_COLOR_REGEX.test(strategy.color || '')
+        ? strategy.color
+        : '#6366F1';
+
+      const chart = new Chart(ctxChart, {
+        type: 'bar',
+        data: {
+          labels: labels.map(formatLossLabel),
+          datasets: [{
+            label: 'Lose streak count',
+            data: values,
+            backgroundColor: hexToRgba(barColor, 0.5),
+            borderColor: hexToRgba(barColor, 0.9),
+            borderWidth: 1.5,
+            borderRadius: 6,
+            maxBarThickness: 28,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              grid: {
+                color: 'rgba(148, 163, 184, 0.1)',
+              },
+              ticks: {
+                color: '#CBD5F5',
+                font: { size: 10 },
+              },
+            },
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: 'rgba(148, 163, 184, 0.1)',
+              },
+              ticks: {
+                precision: 0,
+                color: '#CBD5F5',
+                font: { size: 10 },
+              },
+            },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const value = context.parsed.y;
+                  return `${value} ${value === 1 ? 'occurrence' : 'occurrences'}`;
+                }
+              }
+            }
+          },
+        },
+      });
+
+      debugLoseStreakCharts.set(index, chart);
+    }
+
     function renderDebugPanel() {
       if (!debugWrap) return;
       if (!strategies.length) {
+        destroyLoseStreakCharts();
         debugWrap.innerHTML = '<p class="text-xs text-slate-500">Create a strategy to see its simulation log here.</p>';
         return;
       }
@@ -804,14 +1089,30 @@ function init() {
         .filter(({ strategy }) => strategy.show);
 
       if (!visibleStrategies.length) {
+        destroyLoseStreakCharts();
         debugWrap.innerHTML = '<p class="text-xs text-slate-500">Enable “Show” for a strategy to inspect its debug log.</p>';
         return;
       }
 
+      destroyLoseStreakCharts();
       debugWrap.innerHTML = visibleStrategies.map(({ strategy, index }) => {
         ensureStrategyDebug(strategy);
-        const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
-        const summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;
+        if (strategy.isUserGameplay) {
+          ensureUserGameplayDefaults(strategy);
+        }
+        const label = strategy.isUserGameplay
+          ? 'User Gameplay'
+          : (strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`);
+        let summary = `Cashout ${formatAmount(strategy.cashout)}x • Bet ${formatAmount(strategy.betAmount)}`;
+        if (strategy.isUserGameplay) {
+          const modeLabel = strategy.userGameplay?.mode === 'top'
+            ? 'Top Performing Strategy'
+            : `ROI over ${strategy.userGameplay?.roiRounds || 10} rounds`;
+          const followingLabel = strategy.userGameplay?.lastTargetName
+            ? ` • Following ${strategy.userGameplay.lastTargetName}`
+            : '';
+          summary = `${modeLabel}${followingLabel}`;
+        }
         const rounds = strategy.debug.rounds;
         const feedbackMessage = strategy.debug.feedbackMessage;
         const feedbackTone = strategy.debug.feedbackTone === 'error' ? 'text-rose-400' : 'text-emerald-400';
@@ -832,6 +1133,9 @@ function init() {
               const deltaClass = deltaRaw && deltaRaw !== 0 ? (deltaRaw > 0 ? 'text-emerald-400' : 'text-rose-400') : 'text-slate-400';
               const deltaPrefix = deltaRaw && deltaRaw !== 0 ? (deltaRaw > 0 ? '+' : '−') : '±';
               const deltaLabel = hasDelta ? `${deltaPrefix}${formatAmount(Math.abs(deltaRaw || 0))}` : '';
+              const followedLine = strategy.isUserGameplay && round.followed
+                ? `<div class="mt-1 text-[11px] text-slate-400">Followed: ${round.followed}</div>`
+                : '';
               return `<button type="button" class="${classes}" data-debug-round="${rIdx}" data-debug-strategy="${index}">
                 <div class="flex items-center justify-between text-xs font-semibold">
                   <span>Round ${round.round}</span>
@@ -842,6 +1146,7 @@ function init() {
                   ${bankrollLine}
                   ${deltaLabel ? `<span class="${deltaClass}">Δ ${deltaLabel}</span>` : ''}
                 </div>
+                ${followedLine}
               </button>`;
             }).join('')
           : '<p class="text-xs text-slate-500">No rounds processed yet. Start the simulation to populate this log.</p>';
@@ -849,18 +1154,35 @@ function init() {
         return `<div class="border border-slate-700 rounded-lg overflow-hidden" data-debug-card="${index}">
           <div class="flex items-center justify-between px-4 py-3 bg-slate-900/60 gap-3">
             <button type="button" data-debug-toggle="${index}" class="flex-1 flex items-center justify-between gap-3 text-left hover:text-slate-100">
-              <span class="text-sm font-semibold text-slate-100 flex items-center gap-2"><span class="inline-flex size-2.5 rounded-full" style="background:${strategy.color};"></span>${label}</span>
+              <span class="text-sm font-medium text-slate-100 flex items-center gap-2"><span class="inline-flex size-2.5 rounded-full" style="background:${strategy.color};"></span>${label}</span>
               <span class="text-xs text-slate-400">${rounds.length} rounds</span>
             </button>
             <button type="button" data-debug-copy="${index}" class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded border border-slate-600 text-slate-200 hover:border-indigo-500 hover:text-indigo-200 transition-colors duration-150">Copy log</button>
           </div>
-          <div class="px-4 py-3 space-y-2 ${strategy.debug.expanded ? '' : 'hidden'}" data-debug-body="${index}">
+          <div class="px-4 py-3 space-y-3 ${strategy.debug.expanded ? '' : 'hidden'}" data-debug-body="${index}">
+            <div class="bg-slate-950/60 border border-slate-800 rounded-lg p-3" data-lose-streak-container="${index}">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-semibold text-slate-200 uppercase tracking-wide">Lose streak distribution</span>
+                <span class="text-[11px] text-slate-500" data-lose-streak-summary="${index}">No wins yet</span>
+              </div>
+              <div class="mt-2 h-36" data-lose-streak-chart-wrap="${index}">
+                <canvas data-lose-streak-chart="${index}" height="150"></canvas>
+              </div>
+              <p class="mt-2 text-[11px] text-slate-500 hidden" data-lose-streak-empty="${index}">Need at least one win after a betting streak to calculate this distribution.</p>
+            </div>
             ${feedbackMarkup}
             <div class="text-xs text-slate-400">${summary}</div>
             <div class="space-y-2">${roundsMarkup}</div>
           </div>
         </div>`;
       }).join('');
+
+      visibleStrategies.forEach(({ strategy, index }) => {
+        if (!strategy.debug.expanded) {
+          return;
+        }
+        renderLoseStreakChart(strategy, index);
+      });
     }
 
     function triggerToLines(trigger, index) {
@@ -880,56 +1202,71 @@ function init() {
     function buildDebugExport(strategy, index) {
       ensureStrategyTriggers(strategy);
       ensureStrategyDebug(strategy);
-      const label = strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`;
+      if (strategy.isUserGameplay) {
+        ensureUserGameplayDefaults(strategy);
+      }
+      const label = strategy.isUserGameplay ? 'User Gameplay' : (strategy.name ? `${strategy.name}` : `Strategy ${index + 1}`);
       const lines = [];
       lines.push(`Strategy ${index + 1}: ${label}`);
       lines.push(`Color: ${strategy.color || 'N/A'}`);
-      const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
-      lines.push(`Cashout target: ${cashoutLabel || 'N/A'}`);
-      lines.push(`Base bet amount: ${formatAmount(strategy.betAmount)}`);
+      if (strategy.isUserGameplay) {
+        const modeLabel = strategy.userGameplay?.mode === 'top'
+          ? 'Top Performing Strategy'
+          : `ROI over ${strategy.userGameplay?.roiRounds || 10} rounds`;
+        lines.push(`Mode: ${modeLabel}`);
+        const targetLabel = strategy.userGameplay?.lastTargetName
+          ? strategy.userGameplay.lastTargetName
+          : '(none selected)';
+        lines.push(`Current target: ${targetLabel}`);
+        lines.push('Note: User Gameplay mirrors the configuration of the selected strategy each round.');
+      } else {
+        const cashoutLabel = Number.isFinite(strategy.cashout) ? formatMultiplierLabel(strategy.cashout) : '';
+        lines.push(`Cashout target: ${cashoutLabel || 'N/A'}`);
+        lines.push(`Base bet amount: ${formatAmount(strategy.betAmount)}`);
 
-      const sequence = Array.isArray(strategy.sequence)
-        ? strategy.sequence.map(val => parseFloat(val)).filter(num => Number.isFinite(num))
-        : [];
-      if (strategy.martingale) {
-        if (sequence.length) {
-          lines.push(`Martingale: Enabled (sequence: ${sequence.map(num => formatAmount(num)).join(', ')})`);
+        const sequence = Array.isArray(strategy.sequence)
+          ? strategy.sequence.map(val => parseFloat(val)).filter(num => Number.isFinite(num))
+          : [];
+        if (strategy.martingale) {
+          if (sequence.length) {
+            lines.push(`Martingale: Enabled (sequence: ${sequence.map(num => formatAmount(num)).join(', ')})`);
+          } else {
+            lines.push('Martingale: Enabled (no sequence provided)');
+          }
         } else {
-          lines.push('Martingale: Enabled (no sequence provided)');
+          lines.push('Martingale: Disabled');
         }
-      } else {
-        lines.push('Martingale: Disabled');
-      }
 
-      const risk = strategy.risk || {};
-      if (risk.enabled) {
-        const rounds = Number.isFinite(risk.rounds) ? risk.rounds : 0;
-        const resumeAbove = Number.isFinite(risk.resumeAbove) ? risk.resumeAbove : 0;
-        const resumeRule = risk.restart === 'start' ? 'restart sequence on resume' : 'continue sequence on resume';
-        lines.push(`Risk controls: Enabled — stop after ${rounds} losses, resume after ${resumeAbove} hits ≥ cashout, ${resumeRule}`);
-      } else {
-        lines.push('Risk controls: Disabled');
-      }
+        const risk = strategy.risk || {};
+        if (risk.enabled) {
+          const rounds = Number.isFinite(risk.rounds) ? risk.rounds : 0;
+          const resumeAbove = Number.isFinite(risk.resumeAbove) ? risk.resumeAbove : 0;
+          const resumeRule = risk.restart === 'start' ? 'restart sequence on resume' : 'continue sequence on resume';
+          lines.push(`Risk controls: Enabled — stop after ${rounds} losses, resume after ${resumeAbove} hits ≥ cashout, ${resumeRule}`);
+        } else {
+          lines.push('Risk controls: Disabled');
+        }
 
-      const second = strategy.second || {};
-      if (second.enabled) {
-        const lockRounds = Number.isFinite(second.lockRounds) ? second.lockRounds : 0;
-        const restartLabel = second.restart === 'lock'
-          ? `lock for ${lockRounds} rounds after wins`
-          : 'restart after wins';
-        lines.push(`Second bet: Enabled — amount ${formatAmount(second.amount)} (${restartLabel})`);
-      } else {
-        lines.push('Second bet: Disabled');
-      }
+        const second = strategy.second || {};
+        if (second.enabled) {
+          const lockRounds = Number.isFinite(second.lockRounds) ? second.lockRounds : 0;
+          const restartLabel = second.restart === 'lock'
+            ? `lock for ${lockRounds} rounds after wins`
+            : 'restart after wins';
+          lines.push(`Second bet: Enabled — amount ${formatAmount(second.amount)} (${restartLabel})`);
+        } else {
+          lines.push('Second bet: Disabled');
+        }
 
-      lines.push('');
-      lines.push('Triggers:');
-      if (Array.isArray(strategy.triggers) && strategy.triggers.length) {
-        strategy.triggers.forEach((trigger, tIndex) => {
-          triggerToLines(trigger, tIndex).forEach(line => lines.push(line));
-        });
-      } else {
-        lines.push('  (no triggers configured)');
+        lines.push('');
+        lines.push('Triggers:');
+        if (Array.isArray(strategy.triggers) && strategy.triggers.length) {
+          strategy.triggers.forEach((trigger, tIndex) => {
+            triggerToLines(trigger, tIndex).forEach(line => lines.push(line));
+          });
+        } else {
+          lines.push('  (no triggers configured)');
+        }
       }
 
       lines.push('');
@@ -959,6 +1296,9 @@ function init() {
             const delta = round.bankrollAfter - round.bankrollBefore;
             const sign = delta > 0 ? '+' : delta < 0 ? '-' : '±';
             parts.push(`Δ ${sign}${formatAmount(Math.abs(delta))}`);
+          }
+          if (strategy.isUserGameplay && round.followed) {
+            parts.push(`Followed: ${round.followed}`);
           }
           lines.push(`  ${parts.join(' — ')}`);
         });
@@ -996,8 +1336,63 @@ function init() {
 
     function renderStrategies() {
       strategiesWrap.innerHTML = strategies.map((s,i) => {
-        ensureStrategyTriggers(s);
         ensureStrategyDebug(s);
+        if (s.isUserGameplay) {
+          ensureUserGameplayDefaults(s);
+          const mode = s.userGameplay.mode;
+          const roiActive = mode !== 'top';
+          const roiRounds = s.userGameplay.roiRounds;
+          const targetName = s.userGameplay.lastTargetName;
+          const targetColorRaw = s.userGameplay.lastTargetColor;
+          const hasTargetColor = HEX_COLOR_REGEX.test(targetColorRaw || '');
+          const targetColor = hasTargetColor ? targetColorRaw : s.color;
+          const targetDisplay = targetName
+            ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs" style="color:${targetColor};border-color:${hexToRgba(targetColor,0.35)};background:${hexToRgba(targetColor,0.12)}">${targetName}</span>`
+            : '<span class="text-xs text-slate-400">No active strategy selected yet. Enable another strategy to begin following it.</span>';
+          return `<div class="border border-slate-700 rounded-lg p-4 space-y-3" data-index="${i}" data-user-gameplay="true">
+            <div class="flex justify-between items-center gap-3">
+              <div class="flex items-center gap-2 flex-1">
+                <span class="inline-flex size-3 rounded-full border border-slate-600" data-role="color-dot" style="background:${s.color};"></span>
+                <span class="text-sm font-medium text-slate-100">User Gameplay</span>
+              </div>
+              <label class="flex items-center gap-1 text-xs text-slate-200 mr-2"><input type="checkbox" data-field="show" ${s.show?'checked':''}/>Show</label>
+            </div>
+            <div class="space-y-3">
+              <div class="flex items-center gap-3">
+                <label class="flex items-center gap-2 text-sm text-slate-200">
+                  <span>Color</span>
+                  <input type="color" data-field="color" value="${s.color}" class="h-9 w-16 rounded border border-slate-600 bg-slate-900/40 cursor-pointer" />
+                </label>
+                <span class="text-xs text-slate-400 font-mono" data-role="color-code">${(s.color || '').toUpperCase()}</span>
+              </div>
+              <div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">Selection Mode</div>
+                <div class="flex flex-wrap items-center gap-3">
+                  <label class="flex items-center gap-1 text-sm text-slate-200">
+                    <input type="radio" name="userMode${i}" value="roi" data-field="userMode" ${roiActive ? 'checked' : ''}/> ROI
+                  </label>
+                  <label class="flex items-center gap-1 text-sm text-slate-200">
+                    <input type="radio" name="userMode${i}" value="top" data-field="userMode" ${!roiActive ? 'checked' : ''}/> Top Performing Strategy
+                  </label>
+                </div>
+                <div class="mt-2 ${roiActive ? '' : 'hidden'}" data-user-roi-settings>
+                  <label class="flex items-center gap-2 text-sm text-slate-200">Past rounds to evaluate
+                    <input type="number" min="1" step="1" data-field="userRoiRounds" value="${roiRounds}" class="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm" />
+                  </label>
+                </div>
+              </div>
+              <div class="rounded border border-slate-700 bg-slate-900/40 px-3 py-2 text-xs text-slate-300 space-y-2">
+                <div>
+                  <span class="font-semibold text-slate-200">Current target:</span>
+                  <span class="ml-2">${targetDisplay}</span>
+                </div>
+                <p class="text-slate-400">User Gameplay mirrors the configuration of the selected strategy each round.</p>
+              </div>
+            </div>
+          </div>`;
+        }
+
+        ensureStrategyTriggers(s);
         const triggerBlocks = s.triggers.map((trigger, tIndex) => {
           const condRows = trigger.conditions.map((c,j)=>`
             <div class="flex items-center gap-2 mb-1" data-cond="${j}" data-trigger="${tIndex}">
@@ -1078,8 +1473,13 @@ function init() {
       const idx = e.target.closest('[data-index]')?.dataset.index;
       if (idx === undefined) return;
       const s = strategies[idx];
-      ensureStrategyTriggers(s);
+      if (!s) return;
       ensureStrategyDebug(s);
+      if (!s.isUserGameplay) {
+        ensureStrategyTriggers(s);
+      } else {
+        ensureUserGameplayDefaults(s);
+      }
       const field = e.target.dataset.field;
       switch (field) {
         case 'show': s.show = e.target.checked; syncChartDatasets(); break;
@@ -1144,6 +1544,19 @@ function init() {
         case 'riskRounds': s.risk.rounds = parseInt(e.target.value,10) || 0; break;
         case 'riskResume': s.risk.resumeAbove = parseInt(e.target.value,10) || 0; break;
         case 'riskRestart': s.risk.restart = e.target.value; break;
+        case 'userMode': {
+          if (!s.isUserGameplay) break;
+          const value = e.target.value === 'top' ? 'top' : 'roi';
+          s.userGameplay.mode = value;
+          renderStrategies();
+          break;
+        }
+        case 'userRoiRounds': {
+          if (!s.isUserGameplay) break;
+          const value = parseInt(e.target.value, 10);
+          s.userGameplay.roiRounds = Number.isInteger(value) && value > 0 ? value : 1;
+          break;
+        }
       }
       saveState();
       renderDebugPanel();
@@ -1153,15 +1566,25 @@ function init() {
       const idx = e.target.closest('[data-index]')?.dataset.index;
       if (idx === undefined) return;
       const s = strategies[idx];
-      ensureStrategyTriggers(s);
+      if (!s) return;
       ensureStrategyDebug(s);
+      if (!s.isUserGameplay) {
+        ensureStrategyTriggers(s);
+      } else {
+        ensureUserGameplayDefaults(s);
+      }
       const action = e.target.dataset.action;
+      if (s.isUserGameplay && (action === 'remove' || action === 'duplicate')) {
+        return;
+      }
       if (action === 'remove') { strategies.splice(idx,1); renderStrategies(); syncChartDatasets(); }
       if (action === 'duplicate') {
         const clone = JSON.parse(JSON.stringify(s));
         ensureStrategyTriggers(clone);
         const randomColor = randomStrategyColor([...strategies.map(st => st.color), s.color]);
         clone.color = randomColor;
+        clone.isUserGameplay = false;
+        clone.userGameplay = null;
         const seriesLength = getInitialSeriesLength();
         clone.bankroll = INITIAL_BANKROLL;
         clone.martiIdx = 0;
@@ -1241,6 +1664,88 @@ function init() {
       chart.update('none');
     }
 
+    function getStrategyRounds(strategy) {
+      if (!strategy) return [];
+      ensureStrategyDebug(strategy);
+      return Array.isArray(strategy.debug?.rounds) ? strategy.debug.rounds : [];
+    }
+
+    function computeStrategyRoi(strategy, roundsWindow) {
+      if (!strategy) return -Infinity;
+      const rounds = getStrategyRounds(strategy);
+      if (!rounds.length) {
+        const base = INITIAL_BANKROLL;
+        const end = Number.isFinite(strategy.bankroll) ? strategy.bankroll : INITIAL_BANKROLL;
+        return base > 0 ? (end - base) / base : 0;
+      }
+      const windowSize = Number.isInteger(roundsWindow) && roundsWindow > 0 ? roundsWindow : rounds.length;
+      const subset = rounds.slice(-windowSize);
+      const first = subset.find(round => Number.isFinite(round.bankrollBefore) || Number.isFinite(round.bankrollAfter));
+      const last = [...subset].reverse().find(round => Number.isFinite(round.bankrollAfter) || Number.isFinite(round.bankrollBefore));
+      const start = first
+        ? (Number.isFinite(first.bankrollBefore) ? first.bankrollBefore : first.bankrollAfter)
+        : INITIAL_BANKROLL;
+      const end = last
+        ? (Number.isFinite(last.bankrollAfter) ? last.bankrollAfter : last.bankrollBefore)
+        : strategy.bankroll;
+      if (!Number.isFinite(start) || start === 0) return 0;
+      if (!Number.isFinite(end)) return 0;
+      return (end - start) / start;
+    }
+
+    function selectUserGameplayTarget(userStrategy) {
+      ensureUserGameplayDefaults(userStrategy);
+      const mode = userStrategy.userGameplay.mode;
+      const roundsWindow = userStrategy.userGameplay.roiRounds;
+      const candidates = strategies
+        .map((strategy, index) => ({ strategy, index }))
+        .filter(({ strategy }) => !strategy.isUserGameplay && strategy.show);
+
+      if (!candidates.length) {
+        userStrategy.userGameplay.lastTargetIndex = null;
+        userStrategy.userGameplay.lastTargetName = '';
+        userStrategy.userGameplay.lastTargetColor = '';
+        return null;
+      }
+
+      let selected = null;
+
+      if (mode === 'top') {
+        selected = candidates.reduce((best, current) => {
+          if (!best) return current;
+          return current.strategy.bankroll > best.strategy.bankroll ? current : best;
+        }, null);
+      } else {
+        let bestRoi = -Infinity;
+        candidates.forEach(candidate => {
+          const roi = computeStrategyRoi(candidate.strategy, roundsWindow);
+          if (!selected || roi > bestRoi) {
+            bestRoi = roi;
+            selected = { ...candidate, roi };
+          }
+        });
+        if (!selected) {
+          selected = candidates.reduce((best, current) => {
+            if (!best) return current;
+            return current.strategy.bankroll > best.strategy.bankroll ? current : best;
+          }, null);
+        }
+      }
+
+      if (!selected) {
+        userStrategy.userGameplay.lastTargetIndex = null;
+        userStrategy.userGameplay.lastTargetName = '';
+        userStrategy.userGameplay.lastTargetColor = '';
+        return null;
+      }
+
+      const label = selected.strategy.name ? selected.strategy.name : `Strategy ${selected.index + 1}`;
+      userStrategy.userGameplay.lastTargetIndex = selected.index;
+      userStrategy.userGameplay.lastTargetName = label;
+      userStrategy.userGameplay.lastTargetColor = selected.strategy.color || '';
+      return { ...selected, label };
+    }
+
     function evaluateTriggers(triggers, history) {
       if (!Array.isArray(triggers) || !triggers.length) return false;
 
@@ -1294,31 +1799,78 @@ function init() {
       if (usedMultipliers.length > 10) usedMultipliers.shift();
       renderLastMultipliers(usedMultipliers);
 
-      strategies.forEach(s => {
+      strategies.forEach((s) => {
         ensureStrategyDebug(s);
+        if (s.isUserGameplay) {
+          ensureUserGameplayDefaults(s);
+        } else {
+          ensureStrategyTriggers(s);
+        }
+
         const bankrollBefore = s.bankroll;
-        const shouldBet = evaluateTriggers(s.triggers, usedMultipliers);
+        let targetSelection = null;
+        let sourceStrategy = s;
+
+        if (s.isUserGameplay) {
+          targetSelection = selectUserGameplayTarget(s);
+          if (!targetSelection) {
+            const debugEntry = {
+              round: roundNumber,
+              multiplier: currMult,
+              decision: 'No target',
+              outcome: 'No active strategies',
+              bet: 0,
+              bankrollAfter: s.bankroll,
+              bankrollBefore,
+            };
+            pushDebugRound(s, debugEntry);
+            s.data.push(s.bankroll);
+            if (s.data.length > labels.length) s.data.shift();
+            return;
+          }
+          sourceStrategy = targetSelection.strategy;
+          ensureStrategyTriggers(sourceStrategy);
+        }
+
+        const effectiveTriggers = s.isUserGameplay ? sourceStrategy.triggers : s.triggers;
+        const cashoutValue = Number.isFinite(sourceStrategy.cashout) && sourceStrategy.cashout > 0 ? sourceStrategy.cashout : defaultCashout;
+        const betBase = Number.isFinite(sourceStrategy.betAmount) ? sourceStrategy.betAmount : INITIAL_BET;
+        const martingaleEnabled = !!sourceStrategy.martingale;
+        const sequence = Array.isArray(sourceStrategy.sequence) ? sourceStrategy.sequence : [];
+        const riskSource = sourceStrategy.risk || {};
+        const effectiveRisk = {
+          enabled: !!riskSource.enabled,
+          rounds: parseInt(riskSource.rounds, 10) || 0,
+          resumeAbove: parseInt(riskSource.resumeAbove, 10) || 0,
+          restart: riskSource.restart === 'continue' ? 'continue' : 'start',
+        };
+
+        const shouldBet = evaluateTriggers(effectiveTriggers, usedMultipliers);
         if (s.cooldown) {
-          if (shouldBet && currMult >= s.cashout) {
+          if (shouldBet && currMult >= cashoutValue) {
             s.resumeHits++;
-            if (s.resumeHits >= s.risk.resumeAbove) {
+            if (s.resumeHits >= effectiveRisk.resumeAbove) {
               s.cooldown = false;
               s.resumeHits = 0;
               s.lossStreak = 0;
-              if (s.risk.restart === 'start') s.martiIdx = 0;
+              if (effectiveRisk.restart === 'start') s.martiIdx = 0;
             }
           }
           s.data.push(s.bankroll);
           if (s.data.length > labels.length) s.data.shift();
-          pushDebugRound(s, {
+          const debugEntry = {
             round: roundNumber,
             multiplier: currMult,
             decision: 'Cooldown',
             outcome: 'Paused',
             bet: 0,
             bankrollAfter: s.bankroll,
-            bankrollBefore
-          });
+            bankrollBefore,
+          };
+          if (s.isUserGameplay && targetSelection) {
+            debugEntry.followed = targetSelection.label;
+          }
+          pushDebugRound(s, debugEntry);
           return;
         }
 
@@ -1326,19 +1878,22 @@ function init() {
         let outcome = 'No bet';
         let bet = 0;
         if (shouldBet) {
-          const seqMul = s.martingale && s.sequence.length ? (s.sequence[s.martiIdx] || 1) : 1;
-          bet = s.betAmount * seqMul;
+          const seqValueRaw = Array.isArray(sequence) ? parseFloat(sequence[s.martiIdx]) : NaN;
+          const seqMul = martingaleEnabled && Array.isArray(sequence) && sequence.length
+            ? (Number.isFinite(seqValueRaw) && seqValueRaw > 0 ? seqValueRaw : 1)
+            : 1;
+          bet = betBase * seqMul;
           decision = 'Bet';
-          outcome = currMult >= s.cashout ? 'Win' : 'Loss';
-          if (currMult >= s.cashout) {
-            s.bankroll += bet * (s.cashout - 1);
+          outcome = currMult >= cashoutValue ? 'Win' : 'Loss';
+          if (currMult >= cashoutValue) {
+            s.bankroll += bet * (cashoutValue - 1);
             s.martiIdx = 0;
             s.lossStreak = 0;
           } else {
             s.bankroll -= bet;
-            if (s.martingale && s.martiIdx < s.sequence.length - 1) s.martiIdx++;
+            if (martingaleEnabled && Array.isArray(sequence) && s.martiIdx < sequence.length - 1) s.martiIdx++;
             s.lossStreak++;
-            if (s.risk.enabled && s.risk.rounds > 0 && s.lossStreak >= s.risk.rounds) {
+            if (effectiveRisk.enabled && effectiveRisk.rounds > 0 && s.lossStreak >= effectiveRisk.rounds) {
               s.cooldown = true;
               s.resumeHits = 0;
             }
@@ -1347,15 +1902,19 @@ function init() {
         s.data.push(s.bankroll);
         if (s.data.length > labels.length) s.data.shift();
 
-        pushDebugRound(s, {
+        const debugEntry = {
           round: roundNumber,
           multiplier: currMult,
           decision,
           outcome,
           bet,
           bankrollAfter: s.bankroll,
-          bankrollBefore
-        });
+          bankrollBefore,
+        };
+        if (s.isUserGameplay && targetSelection) {
+          debugEntry.followed = targetSelection.label;
+        }
+        pushDebugRound(s, debugEntry);
       });
 
       labels.push(tick++);
@@ -1406,6 +1965,12 @@ function init() {
         ensureStrategyDebug(s);
         s.debug.rounds = [];
         s.debug.selectedRound = null;
+        if (s.isUserGameplay) {
+          ensureUserGameplayDefaults(s);
+          s.userGameplay.lastTargetIndex = null;
+          s.userGameplay.lastTargetName = '';
+          s.userGameplay.lastTargetColor = '';
+        }
       });
 
       renderLastMultipliers([]);
